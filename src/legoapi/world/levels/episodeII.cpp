@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gameapi/ai/aisys/aisys.h"
 #include "decomp.h"
 #include "legoapi/world/level.h"
 #include "globals.h"
@@ -657,7 +658,17 @@ void DookuC_Reset(WORLDINFO_s *world) {
         dooku_c.total = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
         dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);
     }
-    NuSpecialFind(world->current_gscn, reinterpret_cast<void **>(&dooku_c.node), "dooku_node", 1);
+    NuSpecialFind(world->current_gscn, &dooku_c.node, "dooku_node", 1);
+}
+
+// The three force towers form a stack; while it is complete the AI path runs
+// up and over it, so the four "fptower" nodes are moved onto the tower tops
+// and the connections between them become traversable again. The node
+// positions depend on which two towers the stack picked up, in order.
+static void DookuC_SetNodePos(AIPATHNODE_s *node, f32 x, f32 y, f32 z) {
+    node->position.x = x;
+    node->position.y = y;
+    node->position.z = z;
 }
 
 void DookuC_Update(WORLDINFO_s *world) {
@@ -669,6 +680,105 @@ void DookuC_Update(WORLDINFO_s *world) {
         }
     }
     DrawForceBackEffect(&dooku_c.node);
+
+    GIZFORCE_s *tower_a = LevGizForce[0];
+    if (tower_a == NULL) {
+        return;
+    }
+    GIZFORCE_s *tower_b = LevGizForce[1];
+    if (tower_b == NULL) {
+        return;
+    }
+    GIZFORCE_s *tower_c = LevGizForce[2];
+    if (tower_c == NULL) {
+        return;
+    }
+
+    GIZFORCEGROUP_s *stack = tower_a->group;
+    if (stack == NULL || (stack->field_0x24 & GIZFORCE_GROUP_STACK_COMPLETE) == 0) {
+        if (dookuC_nodesNeedUpdating == 0) {
+            return;
+        }
+        dookuC_nodesNeedUpdating = 0;
+        for (i32 i = 0; i < 4; i++) {
+            PATHCNXDATA_s *cnx = (PATHCNXDATA_s *)LevPathCnx[i];
+            if (cnx != NULL) {
+                cnx->flags0 |= 0x80000000;
+                cnx->flags4 |= 0x80000000;
+            }
+        }
+    } else {
+        if (dookuC_nodesNeedUpdating != 0) {
+            return;
+        }
+        dookuC_nodesNeedUpdating = 1;
+        for (i32 i = 0; i < 4; i++) {
+            PATHCNXDATA_s *cnx = (PATHCNXDATA_s *)LevPathCnx[i];
+            if (cnx != NULL) {
+                cnx->flags0 &= 0x7fffffff;
+                cnx->flags4 &= 0x7fffffff;
+            }
+        }
+
+        AIPATHNODE_s *node_a = (AIPATHNODE_s *)LevAIPathNode[0];
+        if (node_a == NULL) {
+            return;
+        }
+        AIPATHNODE_s *node_b = (AIPATHNODE_s *)LevAIPathNode[1];
+        if (node_b == NULL) {
+            return;
+        }
+        AIPATHNODE_s *node_c = (AIPATHNODE_s *)LevAIPathNode[2];
+        if (node_c == NULL) {
+            return;
+        }
+        AIPATHNODE_s *node_d = (AIPATHNODE_s *)LevAIPathNode[3];
+        if (node_d == NULL) {
+            return;
+        }
+
+        if (stack->forces[0] == LevGizForce[0]) {
+            DookuC_SetNodePos(node_a, 3.76f, 0.01f, -1.59f);
+            if (stack->forces[1] == LevGizForce[1]) {
+                DookuC_SetNodePos(node_b, 4.29f, 0.56f, -1.5f);
+                DookuC_SetNodePos(node_c, 4.05f, 1.12f, -1.12f);
+                DookuC_SetNodePos(node_d, 4.46f, 1.69f, -0.97f);
+            } else {
+                DookuC_SetNodePos(node_b, 4.42f, 0.56f, -1.46f);
+                DookuC_SetNodePos(node_c, 4.66f, 1.12f, -1.08f);
+                DookuC_SetNodePos(node_d, 4.41f, 1.69f, -1.04f);
+            }
+        } else if (stack->forces[0] == LevGizForce[1]) {
+            DookuC_SetNodePos(node_a, 3.6f, 0.01f, -0.96f);
+            if (stack->forces[1] == LevGizForce[0]) {
+                DookuC_SetNodePos(node_b, 4.06f, 0.56f, -0.98f);
+                DookuC_SetNodePos(node_c, 4.2f, 1.12f, -1.28f);
+                DookuC_SetNodePos(node_d, 4.41f, 1.69f, -1.04f);
+            } else {
+                DookuC_SetNodePos(node_b, 4.06f, 0.56f, -0.98f);
+                DookuC_SetNodePos(node_c, 4.37f, 1.12f, -0.81f);
+                DookuC_SetNodePos(node_d, 4.3f, 1.69f, -1.3f);
+            }
+        } else if (stack->forces[0] == LevGizForce[2]) {
+            DookuC_SetNodePos(node_a, 4.28f, 0.01f, -0.41f);
+            if (stack->forces[1] == LevGizForce[0]) {
+                DookuC_SetNodePos(node_b, 4.66f, 0.56f, -0.98f);
+                DookuC_SetNodePos(node_c, 4.5f, 1.12f, -1.35f);
+                DookuC_SetNodePos(node_d, 4.38f, 1.69f, -1.08f);
+            } else {
+                DookuC_SetNodePos(node_b, 4.53f, 0.56f, -0.77f);
+                DookuC_SetNodePos(node_c, 4.2f, 1.12f, -0.91f);
+                DookuC_SetNodePos(node_d, 4.43f, 1.69f, -1.28f);
+            }
+        }
+
+        if (world->ai_sys->path_sys != NULL && world->ai_sys->path_sys->active_path != NULL) {
+            for (i32 i = 0; i < 4; i++) {
+                AIPathNodeUpdatePos(world->ai_sys, world->ai_sys->path_sys->active_path,
+                                    (AIPATHNODE_s *)LevAIPathNode[i]);
+            }
+        }
+    }
 }
 
 void DookuC_DrawPanel(WORLDINFO_s *) {
