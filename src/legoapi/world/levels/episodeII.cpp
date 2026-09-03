@@ -48,6 +48,10 @@ extern "C" {
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
 
+// Conveyor speeds from the level config, parked here while Factory_B forces the
+// belts to a stop; FactoryB_Update restores them.
+static f32 FactoryBConveyorXSpeed;
+static f32 FactoryBConveyorZSpeed;
 // Kamino disco-room state (original _ZL11kaminodisco). A byte flag (0/1/2)
 // that KaminoC_Init clears via memset of the enclosing disco struct, which is
 // why readers cannot be constant-folded.
@@ -338,14 +342,22 @@ void NbKaminoA_Init(WORLDINFO_s *world) {
 void FactoryB_Init(WORLDINFO_s *world) {
     factoryb_netpacket = SetLevelHack(0x4);
     InitPaintPuzzle(world);
-    LevGizObst[0] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv1");
-    LevGizObst[1] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv2");
-    LevGizObst[2] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv3");
-    LevGizObst[3] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv4");
-    LevGizObst[4] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv5");
-    LevGizObst[5] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv6");
-    LevGizObst[6] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv7");
-    LevGizObst[7] = GizObstacle_FindByName(world->giz_obstacle_sys, "conv8");
+    // First entry captures the config speeds; a restart must not re-capture the
+    // zeroes this function leaves behind.
+    if (FactoryBConveyorXSpeed == 0.0f && FactoryBConveyorZSpeed == 0.0f) {
+        FactoryBConveyorXSpeed = world->current_level->conveyor_x_speed;
+        FactoryBConveyorZSpeed = world->current_level->conveyor_z_speed;
+    }
+    world->current_level->conveyor_x_speed = 0.0f;
+    world->current_level->conveyor_z_speed = 0.0f;
+    LevGizObst[0] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle49");
+    LevGizObst[1] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle50");
+    LevGizObst[2] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle48");
+    LevGizObst[3] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle52");
+    LevGizObst[4] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle47");
+    LevGizObst[5] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle46");
+    LevGizObst[6] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle45");
+    LevGizObst[7] = GizObstacle_FindByName(world->giz_obstacle_sys, "obstacle51");
     for (i32 i = 0; i < 8; i++) {
         if (LevGizObst[i] != NULL) {
             LevGizObst[i]->mode = 3;
