@@ -468,14 +468,11 @@ void GunshipA_Update(WORLDINFO_s *world) {
 }
 
 void GunshipA_Draw(WORLDINFO_s *world) {
-    if (TimingBarSet == 5) {
-        TBOPENFN("gun_timing", 5);
-        DrawMiniSnowTroopers(world);
-    } else {
-        DrawMiniSnowTroopers(world);
-        if (TimingBarSet == 5)
-            TBCLOSEFN("gun_timing", 5);
-    }
+    if (TimingBarSet == 5)
+        TBOPENFN("mini", 5);
+    DrawMiniSnowTroopers(world);
+    if (TimingBarSet == 5)
+        TBCLOSEFN("mini", 5);
 }
 
 void GunshipB_Reset(WORLDINFO_s *world) {
