@@ -64,13 +64,22 @@ struct DOOKUC_STATE_s {
 };
 static struct DOOKUC_STATE_s dooku_c;
 
-// kamino_e level state block and hud scene object.
 struct kamino_e_state_s {
     char pad_0x00[0x28];
     f32 field_0x28; // 0x28
 };
-static struct kamino_e_state_s *kamino_e_state;
-static void *kamino_e_special; // kamino_e named scene object
+
+// Kamino_E level state (original _ZL8kamino_e, one 120-byte .bss object
+// holding more of the level's state than is modelled here). The fields must
+// stay in one object: handing `&special` to the NuSpecial API makes the whole
+// block address-taken, so `state` is reloaded after every call.
+struct KAMINO_E_s {
+    u8 pad_0x00[0x0c];
+    struct kamino_e_state_s *state; // 0x0c
+    u8 pad_0x10[0x0c];
+    void *special; // 0x1c, kamino_e named scene object
+};
+static struct KAMINO_E_s kamino_e;
 
 // Episode 2 level handlers, in the game's Episode_II progression:
 // pursuit (coruscant bounty-hunter) / kamino / factory (geonosis droid
@@ -281,14 +290,14 @@ void KaminoE_AlwaysUpdate(WORLDINFO_s *) {
 
 void KaminoE_Draw(WORLDINFO_s *world) {
     if (netclient == 0) {
-        if (kamino_e_state != NULL && kamino_e_state->field_0x28 > 0.0f) {
+        if (kamino_e.state->field_0x28 > 0.0f) {
             GameObject_s *obj = (GameObject_s *)FindGameObject((i32)(i16)id_JANGOFETT, 1, 1, 1, 0);
-            if (obj != NULL && kamino_e_state != NULL && obj->apiobj.anim_packet.time_secondary == 1.0f)
+            if (obj != NULL && kamino_e.state != NULL && kamino_e.state->field_0x28 == 1.0f)
                 DrawBossHitPoints(obj);
         }
     }
-    NuSpecialSetDrawMtx(&kamino_e_special, NuSpecialGetDrawMtx(&kamino_e_special));
-    NuSpecialSetVisibility(&kamino_e_special, 1);
+    NuSpecialSetDrawMtx(&kamino_e.special, NuSpecialGetDrawMtx(&kamino_e.special));
+    NuSpecialSetVisibility(&kamino_e.special, 1);
 }
 
 void KaminoE_CheckPlatHit(BOLT_s *) {
