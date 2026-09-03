@@ -43,7 +43,7 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 // live in a shared header.
 
 extern "C" {
-    void *AIPAthFindPathCnx(AISYS_s *, i32, void *, void *, void *); // legoapi/ai pathfinding
+    void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
 }
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
@@ -597,22 +597,20 @@ void BonusGunshipB_Panel(WORLDINFO_s *) {
 // ===========================================================================
 
 void DookuC_Init(WORLDINFO_s *world) {
-    LevGizForce[0] = GizForce_FindByName(world->giz_force_sys, "dooku");
-    LevGizForce[1] = GizForce_FindByName(world->giz_force_sys, "dooku1");
-    LevGizForce[2] = GizForce_FindByName(world->giz_force_sys, "dooku2");
-    void *path1 = AIPathFindNode(world->ai_sys, NULL, "path1");
-    LevAIPathNode[0] = path1;
-    void *path2 = AIPathFindNode(world->ai_sys, NULL, "path2");
-    LevAIPathNode[1] = path2;
-    void *path3 = AIPathFindNode(world->ai_sys, NULL, "path3");
-    LevAIPathNode[2] = path3;
-    void *path4 = AIPathFindNode(world->ai_sys, NULL, "path4");
-    LevAIPathNode[3] = path4;
-    char buf[0x40];
-    LevPathCnx[0] = AIPAthFindPathCnx(world->ai_sys, 0, path1, path2, buf);
-    LevPathCnx[1] = AIPAthFindPathCnx(world->ai_sys, 0, path2, path3, buf);
-    LevPathCnx[2] = AIPAthFindPathCnx(world->ai_sys, 0, path3, path4, buf);
-    LevPathCnx[3] = AIPAthFindPathCnx(world->ai_sys, 0, path4, (void *)"conn", buf);
+    LevGizForce[0] = GizForce_FindByName(world->giz_force_sys, "fptower_1");
+    LevGizForce[1] = GizForce_FindByName(world->giz_force_sys, "fptower_2");
+    LevGizForce[2] = GizForce_FindByName(world->giz_force_sys, "fptower_3");
+    LevAIPathNode[0] = AIPathFindNode(world->ai_sys, 0, "fptower_a");
+    LevAIPathNode[1] = AIPathFindNode(world->ai_sys, 0, "fptower_b");
+    LevAIPathNode[2] = AIPathFindNode(world->ai_sys, 0, "fptower_c");
+    LevAIPathNode[3] = AIPathFindNode(world->ai_sys, 0, "fptower_d");
+    // Callee-written scratch that this level never reads. Its 4-byte size is
+    // load-bearing: it fixes the original's stack frame layout.
+    void *cnx_scratch;
+    LevPathCnx[0] = AIPAthFindPathCnx(world->ai_sys, 0, "fptower_a", "fptower_b", &cnx_scratch);
+    LevPathCnx[1] = AIPAthFindPathCnx(world->ai_sys, 0, "fptower_b", "fptower_c", &cnx_scratch);
+    LevPathCnx[2] = AIPAthFindPathCnx(world->ai_sys, 0, "fptower_c", "fptower_d", &cnx_scratch);
+    LevPathCnx[3] = AIPAthFindPathCnx(world->ai_sys, 0, "fptower_d", "fptower_e", &cnx_scratch);
     dookuC_nodesNeedUpdating = 1;
 }
 
