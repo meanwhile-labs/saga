@@ -15,6 +15,7 @@
 #include "legoapi/legoapi_types.h"
 #include "legoapi/world/levels/levels.h"
 #include "legoapi/render/core/render.h"
+#include "nu2api/nucore/nugcutscene.h"
 #include "nu2api/nu3d/nuspecial.h"
 #include "nu2api/nu3d/nutex.h"
 // This level's view of the shared 16-byte LevFlag scratch. byte0 holds the
@@ -330,13 +331,12 @@ void FactoryB_Init(WORLDINFO_s *world) {
 
 void FactoryB_Reset(WORLDINFO_s *world) {
     ResetPaintPuzzle(world);
-    factoryb_cut = NewCutScene(NULL, world->cutscene_sys, "fb_cut", 0);
-    if (factoryb_cut != NULL) {
-        CUTSCENEDATA_s *scene = (CUTSCENEDATA_s *)factoryb_cut->scene;
-        if (scene != NULL) {
-            scene->field_0x88 |= 2;
-            scene->field_0x88 |= 8;
-        }
+    CUTINFO *cut = NewCutScene(NULL, world->cutscene_sys, "fb_cut", 0);
+    factoryb_cut = cut;
+    if (cut != NULL && cut->instance != NULL) {
+        // Bit 2 marks the instance finished so the cutscene updater skips it.
+        reinterpret_cast<instNUGCUTSCENE_s *>(cut->instance)->flags_88 |= 2;
+        reinterpret_cast<instNUGCUTSCENE_s *>(cut->instance)->flags_88 |= 8;
     }
     factoryb_conveyor_stopped_msg = CheckGizAIMessage(gizaimessagesys, "conv_stopped", NULL);
 }
