@@ -20,7 +20,9 @@
 #include "nu2api/nucore/nugcutscene.h"
 #include "nu2api/nu3d/nuspecial.h"
 #include "nu2api/nu3d/nutex.h"
+#include "nu2api/numath/nufloat.h"
 #include "nu2api/numath/numtx.h"
+#include "nu2api/numath/nutrig.h"
 // This level's view of the shared 16-byte LevFlag scratch. byte0 holds the
 // bonus-gunship milestone state; byte1 a secondary state.
 enum GUNSHIP_STATE_e {
@@ -412,23 +414,28 @@ void FactoryG_Update(WORLDINFO_s *world) {
     if (netclient != 0)
         return;
     i32 complete = 0;
-    if (GizForce_Complete(force_array[0]))
-        complete++;
-    if (GizForce_Complete(force_array[1]))
-        complete++;
-    if (GizForce_Complete(force_array[2]))
-        complete++;
-    if (GizForce_Complete(force_array[3]))
-        complete++;
+    for (i32 i = 0; i < 4; i++) {
+        if (GizForce_Complete(force_array[i]))
+            complete++;
+    }
     if (ObiWan == NULL) {
         ObiWan = (GameObject_s *)FindGameObject((i32)(i16)id_OBIWANKENOBIJEDIMASTER, 0x400, 0, 1, 0);
         return;
     }
-    if (complete == 4) {
-        if (FreePlay == 0)
-            NewCutScene(NULL, world->cutscene_sys, "factory_escape", 1);
+    if (complete != 4) {
+        // Until all four force platforms are held, Obi-Wan is pinned to his
+        // scripted spot and turned by a 2-second sine sweep of +/-30 degrees
+        // about the quarter turn, so he keeps scanning instead of standing still.
+        ObiWan->apiobj.position = {112.76f, 0.75f, -10.5f};
+        const u16 sweep_phase = static_cast<u16>(NuFmod(GameTimer.time_elapsed, 2.0f) / 2.0f * 65536.0f);
+        ObiWan->apiobj.field_0x276 =
+            static_cast<u16>(static_cast<i32>(NU_SIN_LUT(sweep_phase) * 30.0f * (65536.0f / 360.0f))) - NUANG_90DEG;
+    } else if (FreePlay != 0) {
+        CompleteLevel(WORLD);
     } else {
-        ObiWan->apiobj.position = {79.2f, 0.75f, -10.5f};
+        // Bit 2 marks the instance finished so the cutscene updater skips it.
+        reinterpret_cast<instNUGCUTSCENE_s *>(NewCutScene(NULL, world->cutscene_sys, "ep2_factory_outro", 1)->instance)
+            ->flags_88 |= 2;
     }
 }
 
