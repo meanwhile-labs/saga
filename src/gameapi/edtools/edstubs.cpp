@@ -72,7 +72,7 @@ extern "C" {
 
 } // extern "C"
 
-i8 BoltType_FindIDByName(char *name, WORLDINFO *world) {
+i32 BoltType_FindIDByName(char *name, WORLDINFO *world) {
     (void)name;
     (void)world;
     UNIMPLEMENTED();

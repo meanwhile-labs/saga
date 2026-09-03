@@ -70,10 +70,7 @@ struct kamino_e_state_s {
     f32 field_0x28; // 0x28
 };
 static struct kamino_e_state_s *kamino_e_state;
-static void *kamino_e_special;   // kamino_e named scene object
-static i16 gunship_bolts[2];     // gun-ship bolt type ids
-static u8 gunship_flags[0xa];    // gun-ship weapon-select flags
-static void *gunship_weapons[4]; // gun-ship gizmo weapons
+static void *kamino_e_special; // kamino_e named scene object
 
 // Episode 2 level handlers, in the game's Episode_II progression:
 // pursuit (coruscant bounty-hunter) / kamino / factory (geonosis droid
@@ -447,23 +444,23 @@ void JediB_DrawPanel(WORLDINFO_s *) {
 // ===========================================================================
 
 void GunshipA_Init(WORLDINFO_s *world) {
-    gunship_bolts[1] = (i16)BoltType_FindIDByName("gunbolt2", world);
-    gunship_bolts[0] = (i16)BoltType_FindIDByName("gunbolt1", world);
-    gunship_flags[0] = 0;
-    gunship_flags[1] = 0;
-    gunship_flags[2] = 0;
-    gunship_flags[3] = 0;
-    gunship_flags[4] = 0;
-    gunship_flags[5] = 1;
-    gunship_flags[6] = 1;
-    gunship_flags[7] = 1;
-    gunship_flags[8] = 1;
-    gunship_flags[9] = 1;
+    trooper_boltid[1] = BoltType_FindIDByName("trooper_green", world);
+    trooper_boltid[0] = BoltType_FindIDByName("trooper_red", world);
+    trooper_side[0] = 0;
+    trooper_side[1] = 0;
+    trooper_side[2] = 0;
+    trooper_side[3] = 0;
+    trooper_side[4] = 0;
+    trooper_side[5] = 1;
+    trooper_side[6] = 1;
+    trooper_side[7] = 1;
+    trooper_side[8] = 1;
+    trooper_side[9] = 1;
     InitMiniSnowTroopers(world, 0xa, 0x20, 0);
-    gunship_weapons[0] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "gunw1");
-    gunship_weapons[1] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "gunw2");
-    gunship_weapons[2] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "gunw3");
-    gunship_weapons[3] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "gunw4");
+    LevGizmo[0] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "power_a11");
+    LevGizmo[1] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "power_b11");
+    LevGizmo[2] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "power_a21");
+    LevGizmo[3] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "power_b21");
 }
 
 void GunshipA_Update(WORLDINFO_s *world) {

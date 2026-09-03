@@ -390,7 +390,7 @@ typedef struct {
 extern PlayerItemTypeEntry *PlayerItemType __asm__("_ZL14PlayerItemType") __attribute__((visibility("hidden")));
 extern i32 PLAYERITEMTYPECOUNT __asm__("_ZL19PLAYERITEMTYPECOUNT") __attribute__((visibility("hidden")));
 
-extern i8 BoltType_FindIDByName(char *name, WORLDINFO *world);
+extern i32 BoltType_FindIDByName(char *name, WORLDINFO *world);
 
 void PlayerItemTypes_Reset(WORLDINFO *world) {
     if (PlayerItemType != 0 && PLAYERITEMTYPECOUNT > 0) {

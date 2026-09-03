@@ -34,8 +34,8 @@ struct nuhspecial_s;
 struct GAMECUTSCENES_s; // full type in legoapi/legoapi_types.h
 
 extern GIZAIMESSAGESYS_s *gizaimessagesys;
-extern i16 trooper_boltid;
-extern i8 trooper_side[3];
+extern i16 trooper_boltid[2];
+extern i8 trooper_side[10];
 extern nuhspecial_s *hothtroopers;
 extern i32 TimingBarSet;
 extern struct AREADATA_s *PODRACE_ADATA;
