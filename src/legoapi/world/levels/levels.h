@@ -97,6 +97,12 @@ extern i32 clients_mines_bitfield[2];
 extern i32 pod_mines_bitfield[2];
 extern GAMECUTSCENES_s game_cutscenes; // held by value in the original (0x28 bytes)
 
+// Heads-up arrow that tracks Zam Wesell during the Coruscant pursuit.
+struct ZAMARROW_s {
+    GameObject_s *target; // 0x00
+    f32 anim_time;        // 0x04, scaled into the shared sine table
+};
+
 // Unmangled globals from the original binary (C linkage).
 extern "C" {
     extern RETAKEGNETPACKET_s *retakeg_netpacket; // pointer from SetLevelHack(4)
@@ -111,6 +117,7 @@ extern "C" {
     extern float pod_roll[2];
     extern float pod_roll_target[2];
     extern float pod_animtime[2];
+    extern struct ZAMARROW_s zamarrow;
 }
 extern i16 temp_yrot;
 extern i16 temp_xrot;

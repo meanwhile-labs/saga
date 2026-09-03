@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "decomp.h"
 #include "legoapi/world/level.h"
@@ -105,9 +106,8 @@ void BountyHunterPursuitD_Init(WORLDINFO_s *) {
 }
 
 void BountyHunterPursuitA_Reset(WORLDINFO_s *world) {
-    pursuit_state[0] = 0;
-    pursuit_state[1] = 0;
-    pursuit_state[0] = GetNamedGameObject(world->ai_sys, "pursuit_a");
+    memset(&zamarrow, 0, sizeof(zamarrow));
+    zamarrow.target = GetNamedGameObject(world->ai_sys, "pursuit_a");
     GIZMOBLOWUP_s *b;
     if ((b = GizmoBlowUp_FindByName(world, "za1")) != NULL)
         b->field_0x9f |= 0x20;
