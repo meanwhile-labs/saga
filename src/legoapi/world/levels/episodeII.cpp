@@ -13,6 +13,7 @@
 #include "legoapi/ai/core/ai_sys_stubs.h"
 #include "legoapi/audio/sfx.h"
 #include "legoapi/cutscenes/cutscenes.h"
+#include "legoapi/items/base/collection.h"
 #include "legoapi/items/objects/gameobjects.h"
 #include "legoapi/legoapi_types.h"
 #include "legoapi/world/levels/levels.h"
@@ -559,29 +560,61 @@ void BonusGunshipB_Reset(WORLDINFO_s *) {
 }
 
 void BonusGunshipB_Update(WORLDINFO_s *world) {
-    if (netclient != 0) {
-        LevFlag.progress = bonusgunshipb_netpacket->state;
-        LevFlag.exit = bonusgunshipb_netpacket->sub;
-        MiscTime = bonusgunshipb_netpacket->time;
-    } else {
-        if (gunship_player_dead == 0 && ((Player[0] != NULL && Player[0]->apiobj.field_0x287 != 0) ||
-                                         (Player[1] != NULL && Player[1]->apiobj.field_0x287 != 0))) {
-            gunship_player_dead = 1;
-            ResetLevel(world, "bonus_gunship", 1);
+    if (netclient == 0) {
+        if (gunship_player_dead == 0) {
+            if ((Player[0] != NULL && Player[0]->apiobj.field_0x287 != 0) ||
+                (Player[1] != NULL && Player[1]->apiobj.field_0x287 != 0)) {
+                gunship_player_dead = 1;
+                ResetLevel(world, "ep2_bonus_gunshipcavalry_explode", 1);
+            }
+        }
+        if (LevFlag.progress == GUNSHIP_INACTIVE) {
+            // The cavalry is held back three seconds longer per death so far,
+            // capped at half a minute.
+            f32 wait = 15.0f;
+            if (LevDeaths > 0) {
+                wait = (f32)LevDeaths * 3.0f + 15.0f;
+                if (wait > 30.0f)
+                    wait = 30.0f;
+            }
+            if (GameTimer.time_elapsed >= wait) {
+                LevFlag.progress = GUNSHIP_ACTIVE;
+                if (LevGizObst[0] != NULL)
+                    LevGizObst[0]->runtime_flags |= GIZOBSTACLE_RUNTIME_FLAG_AI_ACTIVE;
+                MiscTime = 45.0f;
+                TimerScale = 1.0f;
+                TimerAlpha = 0.0f;
+            }
+        } else if (LevFlag.progress == GUNSHIP_ACTIVE) {
+            // The result is unused; the original still makes the call.
+            NuFmod(MiscTime, 5.0f);
+            const f32 previous = MiscTime;
+            MiscTime = previous - FRAMETIME;
+            if (MiscTime <= 0.0f) {
+                if (Player[0] != NULL && static_cast<i8>(Player[0]->apiobj.flags_low) < 0)
+                    LoseCoins(Player[0], 1);
+                if (Player[1] != NULL && static_cast<i8>(Player[1]->apiobj.flags_low) < 0)
+                    LoseCoins(Player[1], 1);
+                if (gunship_player_dead == 0) {
+                    gunship_player_dead = 1;
+                    ResetLevel(world, "ep2_bonus_gunshipcavalry_explode", 1);
+                }
+                LevFlag.progress = GUNSHIP_WON;
+            } else if (MiscTime > 0.0f) {
+                // Pulse the countdown and tick once per whole second crossed.
+                if ((i32)MiscTime != (i32)previous) {
+                    TimerScale = 1.25f;
+                    TickTockSfx();
+                }
+            }
         }
         bonusgunshipb_netpacket->state = LevFlag.progress;
         bonusgunshipb_netpacket->sub = LevFlag.exit;
         bonusgunshipb_netpacket->time = MiscTime;
-    }
-    if (LevFlag.progress == 0) {
-        if (LevDeaths > 0) {
-            float x = (float)LevDeaths * LevDeaths + 1.0f;
-            if (GameTimer.time_elapsed >= x)
-                LevFlag.progress = GUNSHIP_ACTIVE;
-        }
-    } else if (LevFlag.progress == GUNSHIP_ACTIVE) {
-        if (MiscTime > 5.0f)
-            MiscTime = 5.0f;
+    } else {
+        LevFlag.progress = bonusgunshipb_netpacket->state;
+        LevFlag.exit = bonusgunshipb_netpacket->sub;
+        MiscTime = bonusgunshipb_netpacket->time;
     }
 }
 

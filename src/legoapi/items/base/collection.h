@@ -4,6 +4,7 @@
 #include "nu2api/nucore/common.h"
 
 struct COLLECTID;
+struct GameObject_s;
 
 extern i32 CollectCount;
 extern COLLECTID *CollectList;
@@ -40,3 +41,4 @@ COLLECTID *CollectIDUnlocked(i32 id);
 i32 Collection_GetIDList(COLLECTION_s *collection, u32 model_flag_mask, u32 required_model_flags, i16 *ids,
                          i32 *first_id, i32 *second_id, i32 unused);
 COLLECTION_s *GetFreePlayCollection(i32 area);
+void LoseCoins(struct GameObject_s *object, i32 count);

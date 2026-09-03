@@ -532,6 +532,10 @@ extern NUGSCN *area_scene;
 // Gameplay timers & area state
 // ------------------------------------------------------------------------
 extern f32 DoubleScoreTime;
+// On-screen countdown presentation: TimerScale is the digit scale pulsed on
+// each tick, TimerAlpha its fade.
+extern f32 TimerScale;
+extern f32 TimerAlpha;
 extern TIMER GameTimer;
 extern TIMER GamePlayTimer;
 extern TIMER JoinInTimer;

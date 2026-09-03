@@ -370,6 +370,8 @@ NUGSCN *vehicle_scene = NULL;
 // Gameplay timers & area state
 // ------------------------------------------------------------------------
 f32 DoubleScoreTime = 0.0f;
+f32 TimerScale = 1.0f;
+f32 TimerAlpha = 1.0f;
 f32 TOGGLEHOLDTIME = 1.0f;
 TIMER GameTimer;
 TIMER GamePlayTimer;
