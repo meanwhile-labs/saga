@@ -64,11 +64,10 @@ struct kamino_e_state_s {
     f32 field_0x28; // 0x28
 };
 static struct kamino_e_state_s *kamino_e_state;
-static void *kamino_e_special;    // kamino_e named scene object
-static void *pursuit_state[0x20]; // bounty-hunter pursuit state
-static i16 gunship_bolts[2];      // gun-ship bolt type ids
-static u8 gunship_flags[0xa];     // gun-ship weapon-select flags
-static void *gunship_weapons[4];  // gun-ship gizmo weapons
+static void *kamino_e_special;   // kamino_e named scene object
+static i16 gunship_bolts[2];     // gun-ship bolt type ids
+static u8 gunship_flags[0xa];    // gun-ship weapon-select flags
+static void *gunship_weapons[4]; // gun-ship gizmo weapons
 
 // Episode 2 level handlers, in the game's Episode_II progression:
 // pursuit (coruscant bounty-hunter) / kamino / factory (geonosis droid
@@ -122,13 +121,16 @@ void BountyHunterPursuitA_Reset(WORLDINFO_s *world) {
 }
 
 void BountyHunterPursuitB_Reset(WORLDINFO_s *world) {
-    LevGizmo[0] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_1");
-    LevGizmo[1] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_2");
-    LevGizmo[2] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_3");
-    LevGizmo[3] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_4");
-    LevGizmo[4] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_5");
-    LevGizmo[5] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "pursuitb_6");
-    pursuit_state[0] = GetNamedGameObject(world->ai_sys, "pursuitb_exit");
+    LevGizmo[0] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator1");
+    LevGizmo[1] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator2");
+    LevGizmo[2] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator3");
+    LevGizmo[3] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator4");
+    LevGizmo[4] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator5");
+    LevGizmo[5] = GizmoFindByName(world->gizmo_sys, blowup_gizmotype_id, "generator6");
+    LevGameObject[0] = GetNamedGameObject(world->ai_sys, "ai_zam");
+    memset(&zamarrow, 0, sizeof(zamarrow));
+    zamarrow.target = GetNamedGameObject(world->ai_sys, "ai_zam");
+    LevAIMessage[0] = CheckGizAIMessage(gizaimessagesys, "CompletedB", NULL);
 }
 
 void BountyHunterPursuitC_Reset(WORLDINFO_s *) {
