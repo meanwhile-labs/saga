@@ -48,12 +48,13 @@ extern "C" {
 // that KaminoC_Init clears via memset of the enclosing disco struct, which is
 // why readers cannot be constant-folded.
 static u8 kaminodisco;
-static GIZAIMESSAGE_s *dooku_c; // _ZL7dooku_c
-struct dooku_state_s {
-    i32 hit_message;
-    nuhspecial_s node;
+// Dooku_C level state (original _ZL7dooku_c, one 20-byte .bss object).
+struct DOOKUC_STATE_s {
+    GIZAIMESSAGE_s *total; // 0x00
+    GIZAIMESSAGE_s *hits;  // 0x04
+    nuhspecial_s node;     // 0x08, force-back effect model
 };
-static dooku_state_s dooku_state;
+static struct DOOKUC_STATE_s dooku_c;
 
 // kamino_e level state block and hud scene object.
 struct kamino_e_state_s {
@@ -576,13 +577,16 @@ void DookuC_Init(WORLDINFO_s *world) {
 }
 
 void DookuC_Reset(WORLDINFO_s *world) {
-    dooku_c = 0;
-    dooku_state = {};
+    dooku_c.total = NULL;
+    dooku_c.hits = NULL;
+    dooku_c.node.scene = NULL;
+    dooku_c.node.special = NULL;
+    dooku_c.node.display_special = NULL;
     if (netclient == 0) {
-        dooku_c = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
-        dooku_state.hit_message = (i32)(usize)CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);
+        dooku_c.total = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
+        dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);
     }
-    NuSpecialFind(world->current_gscn, &dooku_state.node, "dooku_node", 1);
+    NuSpecialFind(world->current_gscn, reinterpret_cast<void **>(&dooku_c.node), "dooku_node", 1);
 }
 
 void DookuC_Update(WORLDINFO_s *world) {
@@ -593,13 +597,13 @@ void DookuC_Update(WORLDINFO_s *world) {
             KillBossNewLevel((i32)(i16)id_COUNTDOOKU, 0, 0.0f, DOOKUOUTRO_LDATA->idx);
         }
     }
-    DrawForceBackEffect(&dooku_state.node);
+    DrawForceBackEffect(&dooku_c.node);
 }
 
 void DookuC_DrawPanel(WORLDINFO_s *) {
     if (netclient != 0)
         return;
     GameObject_s *obj = (GameObject_s *)FindGameObject((i32)(i16)id_COUNTDOOKU, 1, 1, 1, 0);
-    if (obj != NULL && dooku_c != 0 && obj->apiobj.anim_packet.time_secondary == 1.0f)
+    if (obj != NULL && dooku_c.hits != NULL && obj->apiobj.anim_packet.time_secondary == 1.0f)
         DrawBossHitPoints(obj);
 }
