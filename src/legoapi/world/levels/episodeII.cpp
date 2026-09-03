@@ -518,29 +518,22 @@ void BonusGunshipA_Reset(WORLDINFO_s *) {
 
 void BonusGunshipA_Update(WORLDINFO_s *world) {
     if (LevFlag.progress == GUNSHIP_INACTIVE) {
-        bool found = false;
-        if (Player[0] != NULL && Player[0]->field_0x661 == 0 && Player[0]->field_0x68c > 0.001f) {
-            found = true;
-        } else if (Player[1] != NULL && Player[1]->field_0x661 == 0 && Player[1]->field_0x68c > 0.001f) {
-            found = true;
-        }
-        if (found) {
-            if (netclient != 0) {
-                LevFlag.progress = GUNSHIP_ACTIVE;
-            } else {
-                Doors_SetLastDoor((DOOR_s *)Door_FindByName(world, "bonus_door"));
+        if ((Player[0] != NULL && Player[0]->field_0x661 == 0 && Player[0]->field_0x68c > 12.1f) ||
+            (Player[1] != NULL && Player[1]->field_0x661 == 0 && Player[1]->field_0x68c > 12.1f)) {
+            if (netclient == 0) {
+                Doors_SetLastDoor((DOOR_s *)Door_FindByName(world, "gunshipa_mid"));
                 bonus_gunship_store_progress_flag = 1;
                 StoreLevelProgress(world);
                 bonus_gunship_store_progress_flag = 0;
-                LevFlag.progress = GUNSHIP_ACTIVE;
             }
+            LevFlag.progress = GUNSHIP_ACTIVE;
         }
     }
     if (gunship_player_dead == 0) {
         if ((Player[0] != NULL && Player[0]->apiobj.field_0x287 != 0) ||
             (Player[1] != NULL && Player[1]->apiobj.field_0x287 != 0)) {
             gunship_player_dead = 1;
-            ResetLevel(world, "bonus", 1);
+            ResetLevel(world, "ep2_bonus_gunshipcavalry_explode", 1);
         }
     }
 }
