@@ -118,6 +118,10 @@ extern "C" {
     extern float pod_roll_target[2];
     extern float pod_animtime[2];
     extern struct ZAMARROW_s zamarrow;
+    // Gates the per-anim traffic side classification in BountyHunterPursuitC_Reset.
+    extern i32 pursuit_c_hack;
+    // World-space z plane the Coruscant traffic anims are classified against.
+    extern float traffic_test_z;
 }
 extern i16 temp_yrot;
 extern i16 temp_xrot;

@@ -5,6 +5,7 @@
 #include "legoapi/world/level.h"
 #include "globals.h"
 #include "legoapi/characters/core/players.h"
+#include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
 #include "legoapi/gizmo/base/GizForceObjectInterface.h"
 #include "legoapi/gizmos/object/newblowup.h"
@@ -19,6 +20,7 @@
 #include "nu2api/nucore/nugcutscene.h"
 #include "nu2api/nu3d/nuspecial.h"
 #include "nu2api/nu3d/nutex.h"
+#include "nu2api/numath/numtx.h"
 // This level's view of the shared 16-byte LevFlag scratch. byte0 holds the
 // bonus-gunship milestone state; byte1 a secondary state.
 enum GUNSHIP_STATE_e {
@@ -133,7 +135,30 @@ void BountyHunterPursuitB_Reset(WORLDINFO_s *world) {
     LevAIMessage[0] = CheckGizAIMessage(gizaimessagesys, "CompletedB", NULL);
 }
 
-void BountyHunterPursuitC_Reset(WORLDINFO_s *) {
+void BountyHunterPursuitC_Reset(WORLDINFO_s *world) {
+    memset(&zamarrow, 0, sizeof(zamarrow));
+    zamarrow.target = GetNamedGameObject(world->ai_sys, "ai_zam");
+    TRAFFICANIMSYS_s *traffic = world->trafficanim_sys;
+    if (traffic == NULL)
+        return;
+    traffic->side = 0;
+    TRAFFICANIM_s *anim = traffic->anims;
+    for (i32 i = 0; i < traffic->anim_count; i++, anim++) {
+        if (pursuit_c_hack == 0) {
+            anim->side = 0;
+            continue;
+        }
+        // Sign the anim by where its end pose sits relative to traffic_test_z,
+        // so the pursuit can hide the traffic on the player's own side.
+        NUMTX end;
+        NUMTX current;
+        EvalAnim(&anim->special, 1.0f, &end, 1);
+        EvalAnim(&anim->special, anim->anim_time, &current, 1);
+        if (traffic_test_z > end.m32)
+            anim->side = (traffic_test_z > current.m32) ? -1 : 0;
+        else
+            anim->side = (traffic_test_z < current.m32);
+    }
 }
 
 void BountyHunterPursuitD_Reset(WORLDINFO_s *world) {

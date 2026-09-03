@@ -874,6 +874,8 @@ extern "C" {
     float pod_roll_target[2] = {0.0f, 0.0f};
     float pod_animtime[2] = {1.0f, 1.0f};
     struct ZAMARROW_s zamarrow = {0};
+    i32 pursuit_c_hack = 1;
+    float traffic_test_z = -360.0f;
 }
 PODSPRINTNETPACKET_s *podsprint_netpacket = NULL;
 i32 gunship_player_dead = 0;

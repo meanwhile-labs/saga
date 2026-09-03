@@ -1971,7 +1971,35 @@ struct TEXTENTRY {
     i16 value;
     i16 pad;
 };
-struct TRAFFICANIMSYS_s {};
+// One "trafficanim" record parsed by TrafficAnimSys_Configure. Only the fields
+// the level handlers read are named; the remainder is traffic.cpp's own state.
+struct TRAFFICANIM_s {
+    nuhspecial_s special; // 0x00
+    char filler_0x0c[0x4];
+    f32 anim_time; // 0x10
+    char filler_0x14[0x126];
+    // Which side of traffic_test_z this anim sits on: -1, 0 or 1.
+    i8 side; // 0x13a
+    char filler_0x13b[0x5];
+};
+DECOMP_ASSERT(sizeof(TRAFFICANIM_s) == 0x140, "TRAFFICANIM_s size");
+DECOMP_ASSERT(offsetof(TRAFFICANIM_s, anim_time) == 0x10, "TRAFFICANIM_s anim_time offset");
+DECOMP_ASSERT(offsetof(TRAFFICANIM_s, side) == 0x13a, "TRAFFICANIM_s side offset");
+// Allocated as one 0x77e4-byte block by TrafficAnimSys_Configure.
+struct TRAFFICANIMSYS_s {
+    TRAFFICANIM_s anims[0x40];   // 0x0000
+    nuhspecial_s vehicles[0x10]; // 0x5000
+    // 0x50c0: the 500-entry spawned-instance pool and its two linked lists.
+    char filler_0x50c0[0x77e0 - 0x50c0];
+    i8 anim_count;    // 0x77e0
+    i8 vehicle_count; // 0x77e1
+    char filler_0x77e2[0x1];
+    // Side of traffic_test_z the camera is currently on; see TRAFFICANIM_s::side.
+    i8 side; // 0x77e3
+};
+DECOMP_ASSERT(sizeof(TRAFFICANIMSYS_s) == 0x77e4, "TRAFFICANIMSYS_s size");
+DECOMP_ASSERT(offsetof(TRAFFICANIMSYS_s, anim_count) == 0x77e0, "TRAFFICANIMSYS_s anim_count offset");
+DECOMP_ASSERT(offsetof(TRAFFICANIMSYS_s, side) == 0x77e3, "TRAFFICANIMSYS_s side offset");
 struct TUBE_s;
 struct ThingLevelData {};
 struct ThingRemoveData {};
