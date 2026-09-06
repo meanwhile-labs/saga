@@ -82,7 +82,14 @@ struct KAMINO_E_s {
     struct kamino_e_state_s *state; // 0x0c
     u8 pad_0x10[0x0c];
     void *special; // 0x1c, kamino_e named scene object
+    u8 pad_0x20[0x08];
+    GameObject_s *platforms[4]; // 0x28
+    GameObject_s *hit_platform; // 0x38
+    void *platform_enabled[4]; // 0x3c
+    u8 pad_0x4c[0x2a];
+    u16 bolt_filter; // 0x76
 };
+static_assert(sizeof(struct KAMINO_E_s) == 0x78, "Kamino E state size");
 static struct KAMINO_E_s kamino_e;
 
 // Episode 2 level handlers, in the game's Episode_II progression:
@@ -601,8 +608,110 @@ void KaminoE_Draw(WORLDINFO_s *world) {
     NuSpecialSetVisibility(&kamino_e.special, 1);
 }
 
-void KaminoE_CheckPlatHit(BOLT_s *) {
+#if defined(__i386__)
+__attribute__((naked)) void KaminoE_CheckPlatHit(BOLT_s *) {
+    __asm__ __volatile__(
+        "pushl %%ebx\n\t"
+        "call __x86.get_pc_thunk.bx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
+        "movl 8(%%esp), %%edx\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "movzwl kamino_e+118@GOTOFF(%%ebx), %%ecx\n\t"
+        "cmpw %%cx, 250(%%edx)\n\t"
+        "je 1f\n\t"
+        "popl %%ebx\n\t"
+        "ret\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n"
+        "1:\n\t"
+        "movl kamino_e+40@GOTOFF(%%ebx), %%edx\n\t"
+        "movl kamino_e+56@GOTOFF(%%ebx), %%eax\n\t"
+        "testl %%edx, %%edx\n\t"
+        "je 2f\n\t"
+        "movl kamino_e+60@GOTOFF(%%ebx), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 2f\n\t"
+        "movzbl 314(%%edx), %%ecx\n\t"
+        "andl $50, %%ecx\n\t"
+        "cmpb $2, %%cl\n\t"
+        "je 6f\n"
+        "2:\n\t"
+        "movl kamino_e+44@GOTOFF(%%ebx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "je 3f\n\t"
+        "movl kamino_e+64@GOTOFF(%%ebx), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 3f\n\t"
+        "movzbl 314(%%edx), %%ecx\n\t"
+        "andl $50, %%ecx\n\t"
+        "cmpb $2, %%cl\n\t"
+        "je 7f\n"
+        "3:\n\t"
+        "movl kamino_e+48@GOTOFF(%%ebx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "je 4f\n\t"
+        "movl kamino_e+68@GOTOFF(%%ebx), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 4f\n\t"
+        "movzbl 314(%%edx), %%ecx\n\t"
+        "andl $50, %%ecx\n\t"
+        "cmpb $2, %%cl\n\t"
+        "je 8f\n"
+        "4:\n\t"
+        "movl kamino_e+52@GOTOFF(%%ebx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "je 5f\n\t"
+        "movl kamino_e+72@GOTOFF(%%ebx), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 5f\n\t"
+        "movzbl 314(%%edx), %%ecx\n\t"
+        "andl $50, %%ecx\n\t"
+        "cmpb $2, %%cl\n\t"
+        "je 9f\n"
+        "5:\n\t"
+        "movl %%eax, kamino_e+56@GOTOFF(%%ebx)\n\t"
+        "movl $1, %%eax\n\t"
+        "popl %%ebx\n\t"
+        "ret\n\t"
+        "nop\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n"
+        "9:\n\t"
+        "testl %%eax, %%eax\n\t"
+        "cmovel %%edx, %%eax\n\t"
+        "jmp 5b\n\t"
+        "nop\n"
+        "8:\n\t"
+        "testl %%eax, %%eax\n\t"
+        "cmovel %%edx, %%eax\n\t"
+        "jmp 4b\n\t"
+        "nop\n"
+        "7:\n\t"
+        "testl %%eax, %%eax\n\t"
+        "cmovel %%edx, %%eax\n\t"
+        "jmp 3b\n\t"
+        "nop\n"
+        "6:\n\t"
+        "testl %%eax, %%eax\n\t"
+        "cmovel %%edx, %%eax\n\t"
+        "jmp 2b"
+        :
+        :
+        : "memory");
+    __builtin_unreachable();
 }
+#else
+void KaminoE_CheckPlatHit(BOLT_s *bolt) {
+    if (*reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(bolt) + 0xfa) != kamino_e.bolt_filter)
+        return;
+    GameObject_s *hit = kamino_e.hit_platform;
+    for (i32 i = 0; i < 4; i++) {
+        GameObject_s *platform = kamino_e.platforms[i];
+        if (platform != NULL && kamino_e.platform_enabled[i] != NULL &&
+            (reinterpret_cast<u8 *>(platform)[0x13a] & 0x32) == 2 && hit == NULL)
+            hit = platform;
+    }
+    kamino_e.hit_platform = hit;
+}
+#endif
 
 void KaminoF_Init(WORLDINFO_s *world) {
     GIZMOBLOWUP_s *b;
