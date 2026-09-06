@@ -107,6 +107,7 @@ extern "C" {
     i16 id_SUPERBATTLEDROID = -1;
     i16 id_BOBAFETT = -1;
     i16 id_TRAININGREMOTE = -1;
+    i16 id_ATAT = -1;
     i16 id_SERVICECAR = -1;
     i16 id_DRAGBOMB = -1;
     i16 id_CLONEWALKER = -1;
@@ -320,6 +321,7 @@ extern "C" {
         {"superbattledroid", &id_SUPERBATTLEDROID},
         {"bobafett", &id_BOBAFETT},
         {"trainingremote", &id_TRAININGREMOTE},
+        {"atat", &id_ATAT},
         {"service_car", &id_SERVICECAR},
         {"dragbomb", &id_DRAGBOMB},
         {"clonewalker", &id_CLONEWALKER},
@@ -719,19 +721,11 @@ static __used__ int GameAudio_OverrideFootStep_LSW(GameObject_s *, int) {
     return 0;
 }
 
-static __used__ bool IsAFallAnim(int) {
-    return false;
-}
-
 static __used__ int IsGrabbable(GameObject_s *) {
     return 0;
 }
 
 static __used__ void GameObjectForceApart2D(APIOBJECT_s *, APIOBJECT_s *) {
-}
-
-static __used__ bool FindSlamOrigin_UseCPos(GameObject_s *) {
-    return false;
 }
 
 static __used__ void DrawCharacterAttachments(GameObject_s *, numtx_s *) {
@@ -922,9 +916,8 @@ extern "C" {
     // remain separate pending transcriptions of their original helpers.
     i32 APIDrawCharacterModel(CHARACTERMODEL_s *model, CHARACTERDATA *, ANIMPACKET_s *animation, NUMTX *matrix, NUMTX *,
                               NUMTX *reflection_matrix, NUVEC *locator_positions, NUMTX *locator_matrices,
-                              GameObject_s *object, u32 flags,
-                              NUJOINTANIM_s *joint_overrides, i32 joint_override_count, WORLDINFO_s *, f32,
-                              NUMTX *output_matrices, i32, void *) {
+                              GameObject_s *object, u32 flags, NUJOINTANIM_s *joint_overrides, i32 joint_override_count,
+                              WORLDINFO_s *, f32, NUMTX *output_matrices, i32, void *) {
         drawcharactermodel_locatorsupdated = 0;
         if (model == NULL || model->hierarchy == NULL || matrix == NULL) {
             if (animation != NULL && drawcharactermodel_keepmergeaction == 0) {
