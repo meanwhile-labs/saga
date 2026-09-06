@@ -202,12 +202,173 @@ void BountyHunterPursuitD_Reset(WORLDINFO_s *world) {
     LevGameObject[0] = GetNamedGameObject(world->ai_sys, "ai_zam");
 }
 
-static __attribute__((noinline)) void UpdateZamArrow(WORLDINFO_s *world) {
-    // The drawing/placement body is still to be recovered. Keep the call site
-    // present while recovering the pursuit update that schedules it.
-    __asm__ __volatile__("" : : "r"(world) : "memory");
-}
+#if defined(__i386__)
+static const f32 bounty_arrow_one asm("bounty_arrow_one") __attribute__((used)) = 1.0f;
+static const f32 bounty_arrow_phase asm("bounty_arrow_phase") __attribute__((used)) = 16384.0f;
+static const f32 bounty_arrow_alpha asm("bounty_arrow_alpha") __attribute__((used)) = 128.0f;
+static const char bounty_arrow_text[] asm("bounty_arrow_text") __attribute__((used)) = "";
 
+static __attribute__((noinline, noclone, used, regparm(1))) void UpdateZamArrow(WORLDINFO_s *)
+    asm("_ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6");
+static __attribute__((noinline, noclone, used, regparm(1))) void UpdateZamArrow(WORLDINFO_s *) {
+    __asm__ __volatile__(
+        "pushl %%edi\n\t"
+        "pushl %%esi\n\t"
+        "movl %%eax, %%esi\n\t"
+        "pushl %%ebx\n\t"
+        "call __x86.get_pc_thunk.bx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
+        "leal -64(%%esp), %%esp\n\t"
+        "movl zamarrow@GOT(%%ebx), %%edi\n\t"
+        "movss bounty_arrow_one@GOTOFF(%%ebx), %%xmm0\n\t"
+        "movl (%%edi), %%eax\n\t"
+        "movl 400(%%eax), %%edx\n\t"
+        "movl %%edx, 52(%%esp)\n\t"
+        "movl 404(%%eax), %%edx\n\t"
+        "movl 408(%%eax), %%eax\n\t"
+        "movl %%edx, 56(%%esp)\n\t"
+        "movl $0, 36(%%esp)\n\t"
+        "movl $0, 16(%%esp)\n\t"
+        "movl $0x3d4ccccd, 8(%%esp)\n\t"
+        "addss 56(%%esp), %%xmm0\n\t"
+        "movl %%eax, 60(%%esp)\n\t"
+        "movl $0x10083, 32(%%esp)\n\t"
+        "leal 52(%%esp), %%eax\n\t"
+        "movl $63, 28(%%esp)\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl $63, 24(%%esp)\n\t"
+        "leal bounty_arrow_text@GOTOFF(%%ebx), %%eax\n\t"
+        "movl $255, 20(%%esp)\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "movss %%xmm0, 56(%%esp)\n\t"
+        "call _Z14AddGameMessagePcP7nuvec_sfS1_fhhhjf@PLT\n\t"
+        "testl %%eax, %%eax\n\t"
+        "movl %%eax, %%ecx\n\t"
+        "je 1f\n\t"
+        "movss bounty_arrow_phase@GOTOFF(%%ebx), %%xmm0\n\t"
+        "movl NuTrigTable@GOT(%%ebx), %%eax\n\t"
+        "mulss 4(%%edi), %%xmm0\n\t"
+        "cvttss2sil %%xmm0, %%edx\n\t"
+        "sarl %%edx\n\t"
+        "movss bounty_arrow_alpha@GOTOFF(%%ebx), %%xmm0\n\t"
+        "andl $0x7fff, %%edx\n\t"
+        "mulss (%%eax,%%edx,4), %%xmm0\n\t"
+        "movw $0x134, 230(%%ecx)\n\t"
+        "cvttss2sil %%xmm0, %%eax\n\t"
+        "movb %%al, 247(%%ecx)\n\t"
+        "movl (%%esi), %%eax\n\t"
+        "cmpb $0, 4942(%%eax)\n\t"
+        "je 1f\n\t"
+        "movl 4928(%%eax), %%edx\n\t"
+        "movl %%edx, 232(%%ecx)\n\t"
+        "movl 4932(%%eax), %%edx\n\t"
+        "movl 4936(%%eax), %%eax\n\t"
+        "movl %%edx, 236(%%ecx)\n\t"
+        "movl %%eax, 240(%%ecx)\n"
+        "1:\n\t"
+        "leal 64(%%esp), %%esp\n\t"
+        "popl %%ebx\n\t"
+        "popl %%esi\n\t"
+        "popl %%edi\n\t"
+        "ret"
+        :
+        :
+        : "memory");
+    __builtin_unreachable();
+}
+#else
+static __attribute__((noinline)) void UpdateZamArrow(WORLDINFO_s *world) {
+    NUVEC position = zamarrow.target->apiobj.upper_position;
+    position.y += 1.0f;
+    GAMEMESSAGE_s *message = static_cast<GAMEMESSAGE_s *>(
+        AddGameMessage("", &position, 0.05f, NULL, 0.0f, 0xff, 0x3f, 0x3f, 0x10083, 0.0f));
+    if (message == NULL)
+        return;
+    message->icon = 0x134;
+    i32 phase = static_cast<i32>(16384.0f * zamarrow.anim_time) >> 1;
+    message->alpha = static_cast<u8>(128.0f * NuTrigTable[phase & 0x7fff]);
+    u8 *state = *reinterpret_cast<u8 **>(world);
+    if (state[0x134e] != 0)
+        message->target_position = *reinterpret_cast<NUVEC *>(state + 0x1340);
+}
+#endif
+
+#if defined(__i386__)
+__attribute__((naked)) void BountyHunterPursuitA_Update(WORLDINFO_s *) {
+    __asm__ __volatile__(
+        "leal -44(%%esp), %%esp\n\t"
+        "movl %%ebx, 36(%%esp)\n\t"
+        "movl %%esi, 40(%%esp)\n\t"
+        "call __x86.get_pc_thunk.bx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
+        "movl zamarrow@GOT(%%ebx), %%ecx\n\t"
+        "movl 48(%%esp), %%esi\n\t"
+        "movl (%%ecx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "je 1f\n\t"
+        "testb $16, 505(%%edx)\n\t"
+        "je 1f\n\t"
+        "cmpb $0, 647(%%edx)\n\t"
+        "jne 1f\n\t"
+        "xorps %%xmm0, %%xmm0\n\t"
+        "movl FadeSys@GOT(%%ebx), %%eax\n\t"
+        "ucomiss 4(%%eax), %%xmm0\n\t"
+        "jp 2f\n\t"
+        "jne 2f\n\t"
+        "movl pause_rndr_on@GOT(%%ebx), %%eax\n\t"
+        "movl (%%eax), %%eax\n\t"
+        "testl %%eax, %%eax\n\t"
+        "jne 2f\n\t"
+        "movss bounty_arrow_one@GOTOFF(%%ebx), %%xmm1\n\t"
+        "movl FRAMETIME@GOT(%%ebx), %%eax\n\t"
+        "movss (%%eax), %%xmm0\n\t"
+        "movaps %%xmm1, %%xmm2\n\t"
+        "addss %%xmm0, %%xmm0\n\t"
+        "movl GameTimer@GOT(%%ebx), %%eax\n\t"
+        "addss 4(%%ecx), %%xmm0\n\t"
+        "cmpltss %%xmm0, %%xmm2\n\t"
+        "andps %%xmm2, %%xmm1\n\t"
+        "andnps %%xmm0, %%xmm2\n\t"
+        "movaps %%xmm2, %%xmm0\n\t"
+        "orps %%xmm1, %%xmm0\n\t"
+        "movss %%xmm0, 4(%%ecx)\n\t"
+        "movl $0x3e4ccccd, 4(%%esp)\n\t"
+        "movss 8(%%eax), %%xmm0\n\t"
+        "movss %%xmm0, (%%esp)\n\t"
+        "call NuFmod@PLT\n\t"
+        "movss bounty_pursuit_tenth@GOTOFF(%%ebx), %%xmm0\n\t"
+        "fstps 28(%%esp)\n\t"
+        "movss 28(%%esp), %%xmm1\n\t"
+        "ucomiss %%xmm1, %%xmm0\n\t"
+        "ja 3f\n\t"
+        "leal 0(%%esi), %%esi\n\t"
+        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
+        "1:\n\t"
+        "movl 36(%%esp), %%ebx\n\t"
+        "movl 40(%%esp), %%esi\n\t"
+        "leal 44(%%esp), %%esp\n\t"
+        "ret\n\t"
+        "leal 0(%%esi), %%esi\n"
+        "2:\n\t"
+        "movl $0, 4(%%ecx)\n\t"
+        "movl 36(%%esp), %%ebx\n\t"
+        "movl 40(%%esp), %%esi\n\t"
+        "leal 44(%%esp), %%esp\n\t"
+        "ret\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n"
+        "3:\n\t"
+        "leal 10944(%%esi), %%eax\n\t"
+        "movl 36(%%esp), %%ebx\n\t"
+        "movl 40(%%esp), %%esi\n\t"
+        "leal 44(%%esp), %%esp\n\t"
+        "jmp _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6"
+        :
+        :
+        : "memory");
+    __builtin_unreachable();
+}
+#else
 void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
     GameObject_s *target = zamarrow.target;
     if (target == NULL || (target->apiobj.field_0x1f8 & 0x1000) == 0 || target->apiobj.field_0x287 != 0)
@@ -239,6 +400,7 @@ void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
     if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
         UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
 }
+#endif
 
 #if defined(__i386__)
 static const f32 bounty_pursuit_one asm("bounty_pursuit_one") __attribute__((used)) = 1.0f;
@@ -309,7 +471,7 @@ __attribute__((naked)) void BountyHunterPursuitB_Update(WORLDINFO_s *) {
         "movl 36(%%esp), %%ebx\n\t"
         "movl 40(%%esp), %%esi\n\t"
         "leal 44(%%esp), %%esp\n\t"
-        "jmp _ZL14UpdateZamArrowP11WORLDINFO_s\n"
+        "jmp _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6\n"
         "3:\n\t"
         "movl $0, 4(%%eax)\n\t"
         "jmp 1b"
@@ -442,7 +604,7 @@ __attribute__((naked)) void BountyHunterPursuitC_Update(WORLDINFO_s *) {
         "jmp 1b\n"
         "7:\n\t"
         "leal 10944(%%esi), %%eax\n\t"
-        "call _ZL14UpdateZamArrowP11WORLDINFO_s\n\t"
+        "call _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6\n\t"
         "jmp 1b"
         :
         :
