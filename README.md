@@ -1,6 +1,6 @@
 # _saga_
 
-![Progress](https://img.shields.io/badge/matching-17.55%25-red)
+![Progress](https://img.shields.io/badge/matching-17.56%25-red)
 [![Bazel build](https://github.com/ttdecomp/saga/actions/workflows/build-bazel.yaml/badge.svg)](https://github.com/ttdecomp/saga/actions/workflows/build-bazel.yaml)
 [![Discord](https://img.shields.io/discord/1467775700894224555?color=%235865F2&logo=discord&logoColor=%23FFFFFF)](https://discord.gg/2HJuMtzA7q)
 [![status & wasm build](https://img.shields.io/badge/status%20%26%20wasm%20build-click%20here-orange?style=flat)](https://ttdecomp.github.io/saga/)
@@ -62,7 +62,7 @@ See https://ttdecomp.github.io/saga/
 | `MechInputTouch` | 9.7% | 6.1% |
 | `editor` | 3.2% | 1.7% |
 | `gameapi` | 12.0% | 1.5% |
-| `gameframework` | 84.0% | 5.9% |
+| `gameframework` | 99.9% | 5.9% |
 | `gamelib` | 8.2% | 5.1% |
 | `java` | 10.5% | 0.0% |
 | `legoapi` | 16.8% | 7.7% |
