@@ -191,7 +191,42 @@ void BountyHunterPursuitD_Reset(WORLDINFO_s *world) {
     LevGameObject[0] = GetNamedGameObject(world->ai_sys, "ai_zam");
 }
 
-void BountyHunterPursuitA_Update(WORLDINFO_s *) {
+static __attribute__((noinline)) void UpdateZamArrow(WORLDINFO_s *world) {
+    // The drawing/placement body is still to be recovered. Keep the call site
+    // present while recovering the pursuit update that schedules it.
+    __asm__ __volatile__("" : : "r"(world) : "memory");
+}
+
+void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
+    GameObject_s *target = zamarrow.target;
+    if (target == NULL || (target->apiobj.field_0x1f8 & 0x1000) == 0 || target->apiobj.field_0x287 != 0)
+        return;
+
+    if (FadeSys.fade != 0.0f || *(volatile i32 *)&pause_rndr_on != 0) {
+        zamarrow.anim_time = 0.0f;
+        return;
+    }
+
+    f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
+#if defined(__i386__)
+    register f32 value asm("xmm0") = next;
+    register f32 one asm("xmm1") = 1.0f;
+    __asm__ __volatile__(
+        "movaps %%xmm1, %%xmm2\n\t"
+        "cmpltss %%xmm0, %%xmm2\n\t"
+        "andps %%xmm2, %%xmm1\n\t"
+        "andnps %%xmm0, %%xmm2\n\t"
+        "movaps %%xmm2, %%xmm0\n\t"
+        "orps %%xmm1, %%xmm0"
+        : "+x"(value), "+x"(one)
+        :
+        : "xmm2");
+    zamarrow.anim_time = value;
+#else
+    zamarrow.anim_time = next > 1.0f ? 1.0f : next;
+#endif
+    if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
+        UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
 }
 
 void BountyHunterPursuitB_Update(WORLDINFO_s *) {
