@@ -533,7 +533,9 @@ void BonusGunshipA_Update(WORLDINFO_s *world) {
     if (LevFlag.progress == GUNSHIP_INACTIVE) {
         if ((Player[0] != NULL && Player[0]->field_0x661 == 0 && Player[0]->field_0x68c > 12.1f) ||
             (Player[1] != NULL && Player[1]->field_0x661 == 0 && Player[1]->field_0x68c > 12.1f)) {
-            if (netclient == 0) {
+            register i32 client asm("edi") = netclient;
+            __asm__ __volatile__("" : "+D"(client));
+            if (client == 0) {
                 Doors_SetLastDoor((DOOR_s *)Door_FindByName(world, "gunshipa_mid"));
                 bonus_gunship_store_progress_flag = 1;
                 StoreLevelProgress(world);
