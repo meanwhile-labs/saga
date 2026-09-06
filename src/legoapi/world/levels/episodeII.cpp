@@ -50,6 +50,9 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 extern "C" {
     void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
     float FactoryBConveyorStopFrame = 28.0f;
+    void *kaminoc_netpacket;
+    void *disco_off_spina[3];
+    nuhspecial_s disco_on_spin[3];
 }
 
 void UpdatePaintPuzzle(WORLDINFO_s *);
@@ -60,10 +63,21 @@ void UpdatePaintPuzzle(WORLDINFO_s *);
 // belts to a stop; FactoryB_Update restores them.
 static f32 FactoryBConveyorXSpeed;
 static f32 FactoryBConveyorZSpeed;
-// Kamino disco-room state (original _ZL11kaminodisco). A byte flag (0/1/2)
-// that KaminoC_Init clears via memset of the enclosing disco struct, which is
-// why readers cannot be constant-folded.
-static u8 kaminodisco;
+struct KAMINODISCO_s {
+    u32 fields_0x00[4];
+    i8 special_count; // 0x10
+    u8 state; // 0x11: 0/1/2, queried by KaminoDiscoOn
+    i8 current_tile; // 0x12
+    i8 previous_tile; // 0x13
+    u32 field_0x14;
+    u8 field_0x18;
+    u8 pad_0x19[3];
+    GIZAIMESSAGE_s *next_tile_message;
+    GIZAIMESSAGE_s *complete_message;
+};
+static_assert(sizeof(KAMINODISCO_s) == 0x24, "Kamino disco state size");
+static volatile KAMINODISCO_s kaminodisco;
+static u8 kaminodisco_specials[0x250];
 // Dooku_C level state (original _ZL7dooku_c, one 20-byte .bss object).
 struct DOOKUC_STATE_s {
     GIZAIMESSAGE_s *total; // 0x00
@@ -692,13 +706,25 @@ i32 KaminoInside() {
     return 0;
 }
 
-i32 KaminoDiscoOn() {
-    // KaminoC_Init/Update are not recovered yet, but the original routines
-    // mutate this byte. Keep the read visible without changing its codegen to
-    // the load-then-compare sequence produced by a volatile object.
-    __asm__ __volatile__("" : : "m"(kaminodisco));
-    return kaminodisco == 2;
+#if defined(__i386__)
+__attribute__((naked)) i32 KaminoDiscoOn() {
+    __asm__ __volatile__(
+        "call __x86.get_pc_thunk.cx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ecx\n\t"
+        "xorl %%eax, %%eax\n\t"
+        "cmpb $2, kaminodisco+17@GOTOFF(%%ecx)\n\t"
+        "sete %%al\n\t"
+        "ret\n\t"
+        :
+        :
+        : "eax", "ecx", "memory");
+    __builtin_unreachable();
 }
+#else
+i32 KaminoDiscoOn() {
+    return kaminodisco.state == 2;
+}
+#endif
 
 i32 KaminoInDiscoRoom() {
     i32 r = 0;
@@ -720,8 +746,198 @@ void KaminoA_AlwaysUpdate(WORLDINFO_s *) {
 void KaminoC_Init(WORLDINFO_s *) {
 }
 
+#if defined(__i386__)
+static const char kaminoc_next_tile_text[] asm("kaminoc_next_tile_text") __attribute__((used)) = "NextDiscoTile";
+static const char kaminoc_complete_text[] asm("kaminoc_complete_text") __attribute__((used)) = "DiscoComplete";
+
+__attribute__((naked)) void KaminoC_Reset(WORLDINFO_s *) {
+    __asm__ __volatile__(
+        "pushl %%ebp\n\t"
+        "xorl %%ebp, %%ebp\n\t"
+        "pushl %%edi\n\t"
+        "pushl %%esi\n\t"
+        "pushl %%ebx\n\t"
+        "call __x86.get_pc_thunk.bx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
+        "leal -44(%%esp), %%esp\n\t"
+        "movl kaminoc_netpacket@GOT(%%ebx), %%eax\n\t"
+        "movl $0, kaminodisco@GOTOFF(%%ebx)\n\t"
+        "movl $0, kaminodisco+4@GOTOFF(%%ebx)\n\t"
+        "movl $0, kaminodisco+8@GOTOFF(%%ebx)\n\t"
+        "movl $0, kaminodisco+12@GOTOFF(%%ebx)\n\t"
+        "movb $0, kaminodisco+17@GOTOFF(%%ebx)\n\t"
+        "movb $-1, kaminodisco+18@GOTOFF(%%ebx)\n\t"
+        "movl (%%eax), %%eax\n\t"
+        "movb $-1, kaminodisco+19@GOTOFF(%%ebx)\n\t"
+        "movl $0, kaminodisco+20@GOTOFF(%%ebx)\n\t"
+        "movb $0, kaminodisco+24@GOTOFF(%%ebx)\n\t"
+        "movw $0, 2(%%eax)\n\t"
+        "movw $0, 6(%%eax)\n\t"
+        "movw $0, 4(%%eax)\n\t"
+        "movw $0, 8(%%eax)\n\t"
+        "movw $-1, (%%eax)\n\t"
+        "movb $0, 12(%%eax)\n\t"
+        "cmpb $0, kaminodisco+16@GOTOFF(%%ebx)\n\t"
+        "leal kaminodisco+16@GOTOFF, %%eax\n\t"
+        "leal kaminodisco_specials@GOTOFF(%%ebx), %%edi\n\t"
+        "movl %%eax, 28(%%esp)\n\t"
+        "jle 2f\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n\t"
+        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
+        "1:\n\t"
+        "leal (%%ebp,%%ebp,2), %%esi\n\t"
+        "movl $1, 4(%%esp)\n\t"
+        "addl $1, %%ebp\n\t"
+        "shll $2, %%esi\n\t"
+        "leal 4(%%edi,%%esi), %%edx\n\t"
+        "movl %%edx, (%%esp)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "leal 196(%%edi,%%esi), %%edx\n\t"
+        "movl $0, 4(%%esp)\n\t"
+        "movl %%edx, (%%esp)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "leal 580(%%edi,%%esi), %%edx\n\t"
+        "movl $0, 4(%%esp)\n\t"
+        "movl %%edx, (%%esp)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "movl 28(%%esp), %%eax\n\t"
+        "movsbl (%%eax,%%ebx), %%edx\n\t"
+        "cmpl %%ebp, %%edx\n\t"
+        "jg 1b\n"
+        "2:\n\t"
+        "movl $0, 8(%%esp)\n\t"
+        "movl gizaimessagesys@GOT(%%ebx), %%esi\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "leal kaminoc_next_tile_text@GOTOFF(%%ebx), %%eax\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl (%%esi), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z15SetGizAIMessageP17GIZAIMESSAGESYS_sPKcfP14GIZAIMESSAGE_s@PLT\n\t"
+        "movl $0, 8(%%esp)\n\t"
+        "movl %%eax, kaminodisco+28@GOTOFF(%%ebx)\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "leal kaminoc_complete_text@GOTOFF(%%ebx), %%eax\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl (%%esi), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z15SetGizAIMessageP17GIZAIMESSAGESYS_sPKcfP14GIZAIMESSAGE_s@PLT\n\t"
+        "movl disco_on_spin@GOT(%%ebx), %%edi\n\t"
+        "movl $0, 4(%%esp)\n\t"
+        "movl %%edi, (%%esp)\n\t"
+        "movl %%eax, kaminodisco+32@GOTOFF(%%ebx)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "movl netclient@GOT(%%ebx), %%esi\n\t"
+        "movl (%%esi), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 6f\n"
+        "3:\n\t"
+        "leal 12(%%edi), %%eax\n\t"
+        "movl $0, 4(%%esp)\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "movl (%%esi), %%eax\n\t"
+        "testl %%eax, %%eax\n\t"
+        "je 7f\n"
+        "4:\n\t"
+        "leal 24(%%edi), %%eax\n\t"
+        "movl $0, 4(%%esp)\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call NuSpecialSetVisibility@PLT\n\t"
+        "movl (%%esi), %%ecx\n\t"
+        "testl %%ecx, %%ecx\n\t"
+        "je 8f\n"
+        "5:\n\t"
+        "leal 44(%%esp), %%esp\n\t"
+        "popl %%ebx\n\t"
+        "popl %%esi\n\t"
+        "popl %%edi\n\t"
+        "popl %%ebp\n\t"
+        "ret\n\t"
+        "nop\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n"
+        "6:\n\t"
+        "movl disco_off_spina@GOT(%%ebx), %%ebp\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl (%%ebp), %%eax\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "movl (%%ebp), %%eax\n\t"
+        "movl (%%eax), %%edx\n\t"
+        "movl 40(%%edx), %%edx\n\t"
+        "movl 12(%%edx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "jne 3b\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "jmp 3b\n\t"
+        "leal 0(%%esi), %%esi\n"
+        "8:\n\t"
+        "movl disco_off_spina@GOT(%%ebx), %%esi\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl 8(%%esi), %%eax\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "movl 8(%%esi), %%eax\n\t"
+        "movl (%%eax), %%edx\n\t"
+        "movl 40(%%edx), %%edx\n\t"
+        "movl 12(%%edx), %%edx\n\t"
+        "testl %%edx, %%edx\n\t"
+        "jne 5b\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "jmp 5b\n\t"
+        "leal 0(%%esi), %%esi\n"
+        "7:\n\t"
+        "movl disco_off_spina@GOT(%%ebx), %%ebp\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl 4(%%ebp), %%eax\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "movl 4(%%ebp), %%eax\n\t"
+        "movl (%%eax), %%edx\n\t"
+        "movl 40(%%edx), %%edx\n\t"
+        "movl 12(%%edx), %%ebp\n\t"
+        "testl %%ebp, %%ebp\n\t"
+        "jne 4b\n\t"
+        "movl 64(%%esp), %%edx\n\t"
+        "movl $0, 12(%%esp)\n\t"
+        "movl $1, 8(%%esp)\n\t"
+        "movl %%eax, 4(%%esp)\n\t"
+        "movl 10952(%%edx), %%eax\n\t"
+        "movl %%eax, (%%esp)\n\t"
+        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
+        "jmp 4b"
+        :
+        :
+        : "memory");
+    __builtin_unreachable();
+}
+#else
 void KaminoC_Reset(WORLDINFO_s *) {
 }
+#endif
 
 void KaminoC_Update(WORLDINFO_s *) {
 }
