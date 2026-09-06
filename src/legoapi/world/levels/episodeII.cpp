@@ -227,6 +227,10 @@ i32 KaminoInside() {
 }
 
 i32 KaminoDiscoOn() {
+    // KaminoC_Init/Update are not recovered yet, but the original routines
+    // mutate this byte. Keep the read visible without changing its codegen to
+    // the load-then-compare sequence produced by a volatile object.
+    __asm__ __volatile__("" : : "m"(kaminodisco));
     return kaminodisco == 2;
 }
 
@@ -785,6 +789,6 @@ void DookuC_DrawPanel(WORLDINFO_s *) {
     if (netclient != 0)
         return;
     GameObject_s *obj = (GameObject_s *)FindGameObject((i32)(i16)id_COUNTDOOKU, 1, 1, 1, 0);
-    if (obj != NULL && dooku_c.hits != NULL && obj->apiobj.anim_packet.time_secondary == 1.0f)
+    if (obj != NULL && dooku_c.hits != NULL && dooku_c.hits->value == 1.0f)
         DrawBossHitPoints(obj);
 }
