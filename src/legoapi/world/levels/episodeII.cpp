@@ -10,6 +10,7 @@
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
 #include "legoapi/gizmo/base/GizForceObjectInterface.h"
 #include "legoapi/gizmos/object/newblowup.h"
+#include "legoapi/gizmos/object/gizobstacles.h"
 #include "legoapi/gizmos/traps/gizforce.h"
 #include "legoapi/ai/core/ai_sys_stubs.h"
 #include "legoapi/audio/sfx.h"
@@ -48,7 +49,10 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 
 extern "C" {
     void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
+    float FactoryBConveyorStopFrame = 28.0f;
 }
+
+void UpdatePaintPuzzle(WORLDINFO_s *);
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
 
@@ -794,7 +798,49 @@ void FactoryB_Reset(WORLDINFO_s *world) {
     factoryb_conveyor_stopped_msg = CheckGizAIMessage(gizaimessagesys, "conv_stopped", NULL);
 }
 
-void FactoryB_Update(WORLDINFO_s *) {
+void FactoryB_Update(WORLDINFO_s *world) {
+    UpdatePaintPuzzle(world);
+
+    GIZAIMESSAGE_s *stopped = static_cast<GIZAIMESSAGE_s *>(factoryb_conveyor_stopped_msg);
+    if (stopped != NULL && stopped->value != 0.0f && factoryb_cut->previous_frame > 50.0f &&
+        factoryb_cut->previous_frame < 54.0f) {
+        instNUGCUTSCENE_s *instance = static_cast<instNUGCUTSCENE_s *>(factoryb_cut->instance);
+        instance->current_frame = 0.0f;
+        instance->flags_88 &= ~2U;
+        world->current_level->conveyor_x_speed = 0.0f;
+        world->current_level->conveyor_z_speed = 0.0f;
+    } else if (static_cast<instNUGCUTSCENE_s *>(factoryb_cut->instance)->current_frame >
+               FactoryBConveyorStopFrame) {
+        world->current_level->conveyor_x_speed = FactoryBConveyorXSpeed;
+        world->current_level->conveyor_z_speed = FactoryBConveyorZSpeed;
+        PlaySfx("FacB_BeltLp", NULL);
+    } else {
+        world->current_level->conveyor_x_speed = 0.0f;
+        world->current_level->conveyor_z_speed = 0.0f;
+    }
+
+    f32 phase = NuFmod(GameTimer.time_elapsed, 25.0f) / 25.0f;
+    i32 pattern;
+    if (phase < 0.25f)
+        pattern = 0x70;
+    else if (phase < 0.5f)
+        pattern = 0x15;
+    else if (phase < 0.75f)
+        pattern = 0xa8;
+    else
+        pattern = 0x0e;
+
+    for (i32 i = 0; i < 8; i++) {
+        GIZOBSTACLE_s *obstacle = LevGizObst[i];
+        if (obstacle == NULL)
+            continue;
+        if ((pattern & (1 << i)) != 0) {
+            if (obstacle->anim_set->state != GAMEANIMSET_STATE_AT_END)
+                GizObstacle_PlayForwards(obstacle);
+        } else if (obstacle->anim_set->state != GAMEANIMSET_STATE_AT_START) {
+            GizObstacle_PlayBackwards(obstacle);
+        }
+    }
 }
 
 void FactoryB_Draw(WORLDINFO_s *) {
