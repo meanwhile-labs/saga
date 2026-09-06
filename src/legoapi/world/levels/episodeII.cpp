@@ -567,7 +567,7 @@ void BonusGunshipB_Reset(WORLDINFO_s *) {
 }
 
 void BonusGunshipB_Update(WORLDINFO_s *world) {
-    if (netclient == 0) {
+    if (*(volatile i32 *)&netclient == 0) {
         if (gunship_player_dead == 0) {
             if ((Player[0] != NULL && Player[0]->apiobj.field_0x287 != 0) ||
                 (Player[1] != NULL && Player[1]->apiobj.field_0x287 != 0)) {
@@ -575,7 +575,9 @@ void BonusGunshipB_Update(WORLDINFO_s *world) {
                 ResetLevel(world, "ep2_bonus_gunshipcavalry_explode", 1);
             }
         }
-        if (LevFlag.progress == GUNSHIP_INACTIVE) {
+        register u8 progress asm("eax") = LevFlag.progress;
+        __asm__ __volatile__("" : "+a"(progress));
+        if (progress == GUNSHIP_INACTIVE) {
             // The cavalry is held back three seconds longer per death so far,
             // capped at half a minute.
             f32 wait = 15.0f;
@@ -592,7 +594,7 @@ void BonusGunshipB_Update(WORLDINFO_s *world) {
                 TimerScale = 1.0f;
                 TimerAlpha = 0.0f;
             }
-        } else if (LevFlag.progress == GUNSHIP_ACTIVE) {
+        } else if (progress == GUNSHIP_ACTIVE) {
             // The result is unused; the original still makes the call.
             NuFmod(MiscTime, 5.0f);
             const f32 previous = MiscTime;
