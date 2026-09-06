@@ -53,16 +53,18 @@ and the download finish. Existing homepage `?obb=` links redirect to the
 player with their query intact. Selecting a file or submitting a URL also
 shows loading progress and starts the game as soon as the data is ready.
 The Pages workflow builds the WASM target, copies `saga.js` and `saga.wasm`
-to the site root, and deploys `doc/pages/`. The player loads those shared
-artifacts from its parent directory.
+to `play/`, and deploys `doc/pages/`. The player loads those artifacts from
+its own directory so pthread workers stay inside the isolation service worker
+scope.
 
-Remote OBB downloads always use
-`https://cors-header-proxy.avery-eae.workers.dev`, including sources that already
-support CORS. Signed source URLs are encoded into the proxy path, which ends
-in `.obb`. URLs already using the proxy are not wrapped again; same-origin
-server OBBs and local file uploads remain local. A generated service worker
-in `play/` provides the cross-origin isolation required by the threaded WASM
-build on GitHub Pages.
+Remote OBB URLs are fetched directly without a proxy. Cross-origin sources
+must allow CORS requests from the player origin. If a source does not allow
+browser downloads, download the OBB separately and select the local file.
+A generated service worker in `play/` provides the cross-origin isolation
+required by the threaded WASM build on GitHub Pages. It intercepts only
+document and worker-script requests; OBB downloads and other fetches use the
+browser network path directly, keeping long downloads independent of the
+service worker lifetime.
 
 The pre-commit hook is a small shim for the `//scripts:pre_commit` Bazel
 `py_binary`. That target runs the build, symbol check, and Bazel report
