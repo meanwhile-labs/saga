@@ -417,7 +417,7 @@ void FactoryG_Init(WORLDINFO_s *world) {
 }
 
 void FactoryG_Update(WORLDINFO_s *world) {
-    if (netclient != 0)
+    if (*(volatile i32 *)&netclient != 0)
         return;
     i32 complete = 0;
     for (i32 i = 0; i < 4; i++) {
