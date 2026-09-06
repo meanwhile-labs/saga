@@ -39,15 +39,5 @@ void HostPlatformHandleInputEvent(const SDL_Event &event, i32 width, i32 height)
     } else if (event.type == SDL_EVENT_FINGER_DOWN) {
         HostInputTouch(static_cast<i32>(event.tfinger.x * width), static_cast<i32>(event.tfinger.y * height), width,
                        height);
-    } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_RETURN) {
-        HostInputTap(0, GAMEPAD_START | GAMEPAD_JUMP);
-    } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_SPACE) {
-        HostInputTap(0, GAMEPAD_JUMP);
     }
-}
-
-u32 HostPlatformKeyboardButtons(const bool *) {
-    // Browser keydown events are edge-triggered above. Polling RETURN/SPACE as
-    // held keys would turn one press into repeated menu input or jumps.
-    return 0;
 }

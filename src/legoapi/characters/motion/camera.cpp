@@ -267,7 +267,11 @@ u16 GameCam_GetAdjustedYRot(GAMECAMERA_s *camera) {
 
 extern "C" {
 
-    void CameraEmitterDistance(void) {
+    extern NUVEC *CutoffCameraVec;
+
+    f32 CameraEmitterDistance(NUVEC *position) {
+        if (CutoffCameraVec != NULL) return NuVecDist(position, CutoffCameraVec, NULL);
+        return 0.0f;
     }
 
 } // extern "C"

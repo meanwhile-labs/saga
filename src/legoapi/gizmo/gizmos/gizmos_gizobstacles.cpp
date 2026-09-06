@@ -1,5 +1,6 @@
 #include "decomp.h"
 #include "globals.h"
+#include "legoapi/characters/core/character.h"
 #include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/gizmos/object/gizobstacles.h"
 #include "legoapi/items/base/apiobject.h"
@@ -58,13 +59,19 @@ static i32 GizObstacle_PosWithinBox(GIZOBSTACLE_s *obstacle, NUVEC *position) {
            local_position.z <= obstacle->trigger_box_half_extents.z;
 }
 
-void GizObstacle_Stop(GIZOBSTACLE_s *) {
+void GizObstacle_Stop(GIZOBSTACLE_s *obstacle) {
+    if (obstacle != NULL) {
+        GameAnimSet_Stop(obstacle->anim_set);
+    }
 }
 
 void GizObstacles_Hit(void *, GIZOBSTACLE_s *, nuvec_s *, i32, i32) {
 }
 
-void GizObstacle_JumpToEnd(GIZOBSTACLE_s *) {
+void GizObstacle_JumpToEnd(GIZOBSTACLE_s *obstacle) {
+    if (obstacle != NULL && obstacle->anim_set != NULL) {
+        GameAnimSet_JumpToEnd(obstacle->anim_set);
+    }
 }
 
 GIZOBSTACLE_s *GizObstacle_FindByName(GIZOBSTACLESYS_s *system, char *name) {
@@ -85,7 +92,10 @@ GIZOBSTACLE_s *GizObstacle_FindByName(GIZOBSTACLESYS_s *system, char *name) {
 void GizObstacle_FindNearest(GIZOBSTACLESYS_s *, nuvec_s *, GameObject_s *, float *, i32) {
 }
 
-void GizObstacle_JumpToStart(GIZOBSTACLE_s *) {
+void GizObstacle_JumpToStart(GIZOBSTACLE_s *obstacle) {
+    if (obstacle != NULL && obstacle->anim_set != NULL) {
+        GameAnimSet_JumpToStart(obstacle->anim_set);
+    }
 }
 
 void GizObstacles_AddTrigger(nuvec_s *position) {
@@ -103,10 +113,26 @@ void GizObstacles_AddTrigger(nuvec_s *position) {
 void GizObstacles_TotalScore(void *) {
 }
 
-void GizObstacle_PlayForwards(GIZOBSTACLE_s *) {
+void GizObstacle_PlayForwards(GIZOBSTACLE_s *obstacle) {
+    if (obstacle != NULL) {
+        GameAnimSet_SetRepeating(obstacle->anim_set, obstacle->state == 2);
+        if (obstacle->animation_speed < 0.0f) {
+            GameAnimSet_Play(obstacle->anim_set, obstacle->animation_speed * obstacle->field_0x50, 0);
+        } else {
+            GameAnimSet_Play(obstacle->anim_set, obstacle->animation_speed * obstacle->field_0x4c, 0);
+        }
+    }
 }
 
-void GizObstacle_PlayBackwards(GIZOBSTACLE_s *) {
+void GizObstacle_PlayBackwards(GIZOBSTACLE_s *obstacle) {
+    if (obstacle != NULL) {
+        GameAnimSet_SetRepeating(obstacle->anim_set, obstacle->state == 2);
+        if (obstacle->animation_speed < 0.0f) {
+            GameAnimSet_Play(obstacle->anim_set, -obstacle->animation_speed * obstacle->field_0x4c, 0);
+        } else {
+            GameAnimSet_Play(obstacle->anim_set, -obstacle->animation_speed * obstacle->field_0x50, 0);
+        }
+    }
 }
 
 void GizObstacle_SetPushControlled(GIZOBSTACLE_s *, GameObject_s *, float) {
@@ -118,12 +144,24 @@ void GizObstacle_SetDefaultSFXFn_LSW(void *, GIZOBSTACLE_s *) {
 void GizObstacle_SetTechnoControlled(GIZOBSTACLE_s *, float) {
 }
 
-// The obstacle update path treats this callback as a boolean predicate.
-i32 GizObstacle_CheckExcludeFlagsFn_LSW(GIZOBSTACLE_s *, GameObject_s *) {
+void Move_BEAST(GameObject_s *object);
+
+i32 GizObstacle_CheckExcludeFlagsFn_LSW(GIZOBSTACLE_s *obstacle, GameObject_s *object) {
+    if ((obstacle->field_0x6c & 1) != 0 &&
+        static_cast<GAMECHARACTERDATA *>(object->apiobj.character_data->field11_0x24)->field275_0x116 != 10) {
+        return 1;
+    }
+    if ((obstacle->field_0x6c & 2) != 0 && object->apiobj.character_data->move_fn != Move_BEAST) {
+        return 1;
+    }
     return 0;
 }
 
-void GizObstacle_EvalAveragePosAndRadius(GIZOBSTACLE_s *, i32) {
+void GizObstacle_EvalAveragePosAndRadius(GIZOBSTACLE_s *obstacle, i32 state) {
+    obstacle->field_0x58 = 1.0f;
+    obstacle->evaluated_position = obstacle->position;
+    GameAnimSet_GetCentreAndRadius(obstacle->anim_set, &obstacle->evaluated_position, &obstacle->field_0x58,
+                                    state, 1, 1);
 }
 
 void GIZOBSTACLE_s::ClearMechObjectInterface() {
