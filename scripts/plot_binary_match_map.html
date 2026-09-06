@@ -466,8 +466,8 @@
                             or</div>
 
                         <form id="url-form">
-                            <label for="obb-url" class="mb-2 block text-xs font-semibold">Remote OBB or Archive.org
-                                item</label>
+                            <label for="obb-url" class="mb-2 block text-xs font-semibold">Link to
+                                main.1060.com.wb.lego.tcs.obb</label>
                             <div class="flex flex-col gap-2 sm:flex-row">
                                 <input id="obb-url" class="text-input min-w-0 flex-1 px-3 py-2.5 text-sm" type="url"
                                     inputmode="url" autocomplete="url" placeholder="https://…" required>
@@ -751,26 +751,6 @@
             return readResponse(response, label);
         }
 
-        async function resolveObbUrl(value) {
-            const url = new URL(value, location.href);
-            const pathParts = url.pathname.split("/").filter(Boolean);
-            if (url.hostname.endsWith("archive.org") && pathParts[0] === "details" && pathParts[1]) {
-                const identifier = decodeURIComponent(pathParts[1]);
-                setStatus("Finding OBB in Archive.org item…");
-                const metadataUrl = new URL(`https://archive.org/metadata/${encodeURIComponent(identifier)}`);
-                const metadataResponse = await fetch(metadataUrl);
-                if (!metadataResponse.ok) {
-                    throw new Error(`Archive.org metadata failed: HTTP ${metadataResponse.status}`);
-                }
-                const metadata = await metadataResponse.json();
-                const obb = metadata.files.find(file => file.name.toLowerCase().endsWith(".obb"));
-                if (!obb) throw new Error("The Archive.org item does not contain an OBB.");
-                const encodedName = obb.name.split("/").map(encodeURIComponent).join("/");
-                return new URL(`https://archive.org/download/${encodeURIComponent(identifier)}/${encodedName}`);
-            }
-            return url;
-        }
-
         async function loadInitialObb() {
             const queryObb = new URLSearchParams(location.search).get("obb");
             if (queryObb) {
@@ -779,7 +759,7 @@
                 setBusy(true);
                 setStatus("Checking the OBB from the page URL…");
                 try {
-                    detectedObbUrl = await resolveObbUrl(queryObb);
+                    detectedObbUrl = new URL(queryObb, location.href);
                     localObbLoad.textContent = "Load linked OBB";
                     localObbLoad.classList.remove("hidden");
                     setBusy(false);
@@ -823,7 +803,7 @@
             event.preventDefault();
             setBusy(true);
             try {
-                const resolvedUrl = await resolveObbUrl(urlInput.value);
+                const resolvedUrl = new URL(urlInput.value, location.href);
                 await loadObb(() => fetchUrl(resolvedUrl, "Downloading OBB…"), "Downloading OBB…");
             } catch (error) {
                 setBusy(false);
