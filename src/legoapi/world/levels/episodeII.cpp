@@ -325,8 +325,173 @@ void BountyHunterPursuitB_Update(WORLDINFO_s *world) {
 }
 #endif
 
-void BountyHunterPursuitC_Update(WORLDINFO_s *) {
+#if defined(__i386__)
+__attribute__((naked)) void BountyHunterPursuitC_Update(WORLDINFO_s *) {
+    __asm__ __volatile__(
+        "pushl %%edi\n\t"
+        "pushl %%esi\n\t"
+        "pushl %%ebx\n\t"
+        "call __x86.get_pc_thunk.bx\n\t"
+        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
+        "leal -32(%%esp), %%esp\n\t"
+        "movl zamarrow@GOT(%%ebx), %%edx\n\t"
+        "movl 48(%%esp), %%esi\n\t"
+        "movl (%%edx), %%eax\n\t"
+        "testl %%eax, %%eax\n\t"
+        "je 1f\n\t"
+        "testb $16, 505(%%eax)\n\t"
+        "je 1f\n\t"
+        "cmpb $0, 647(%%eax)\n\t"
+        "jne 1f\n\t"
+        "xorps %%xmm0, %%xmm0\n\t"
+        "movl FadeSys@GOT(%%ebx), %%eax\n\t"
+        "ucomiss 4(%%eax), %%xmm0\n\t"
+        "jp 6f\n\t"
+        "jne 6f\n\t"
+        "movl pause_rndr_on@GOT(%%ebx), %%eax\n\t"
+        "movl (%%eax), %%eax\n\t"
+        "testl %%eax, %%eax\n\t"
+        "jne 6f\n\t"
+        "movss bounty_pursuit_one@GOTOFF(%%ebx), %%xmm1\n\t"
+        "movl FRAMETIME@GOT(%%ebx), %%eax\n\t"
+        "movss (%%eax), %%xmm0\n\t"
+        "movaps %%xmm1, %%xmm2\n\t"
+        "addss %%xmm0, %%xmm0\n\t"
+        "movl GameTimer@GOT(%%ebx), %%eax\n\t"
+        "addss 4(%%edx), %%xmm0\n\t"
+        "cmpltss %%xmm0, %%xmm2\n\t"
+        "andps %%xmm2, %%xmm1\n\t"
+        "andnps %%xmm0, %%xmm2\n\t"
+        "movaps %%xmm2, %%xmm0\n\t"
+        "orps %%xmm1, %%xmm0\n\t"
+        "movss %%xmm0, 4(%%edx)\n\t"
+        "movl $0x3e4ccccd, 4(%%esp)\n\t"
+        "movss 8(%%eax), %%xmm0\n\t"
+        "movss %%xmm0, (%%esp)\n\t"
+        "call NuFmod@PLT\n\t"
+        "movss bounty_pursuit_tenth@GOTOFF(%%ebx), %%xmm0\n\t"
+        "fstps 28(%%esp)\n\t"
+        "movss 28(%%esp), %%xmm1\n\t"
+        "ucomiss %%xmm1, %%xmm0\n\t"
+        "ja 7f\n\t"
+        ".byte 0x8d, 0x74, 0x26, 0x00\n\t"
+        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
+        "1:\n\t"
+        "movl 20844(%%esi), %%esi\n\t"
+        "testl %%esi, %%esi\n\t"
+        "je 5f\n\t"
+        "movl player@GOT(%%ebx), %%eax\n\t"
+        "movl (%%eax), %%edi\n\t"
+        "testl %%edi, %%edi\n\t"
+        "je 5f\n\t"
+        "movl traffic_test_z@GOT(%%ebx), %%eax\n\t"
+        "movss (%%eax), %%xmm0\n\t"
+        "ucomiss 100(%%edi), %%xmm0\n\t"
+        "ja 4f\n\t"
+        "cmpb $1, 30691(%%esi)\n\t"
+        "je 5f\n\t"
+        "movb $1, 30691(%%esi)\n"
+        "2:\n\t"
+        "cmpb $0, 30688(%%esi)\n\t"
+        "movl %%esi, %%eax\n\t"
+        "jle 5f\n\t"
+        "xorl %%edx, %%edx\n\t"
+        "jmp 9f\n\t"
+        "leal 0(%%esi), %%esi\n"
+        "8:\n\t"
+        "cmpb $1, 314(%%eax)\n\t"
+        "sete 313(%%eax)\n"
+        "3:\n\t"
+        "addl $1, %%edx\n\t"
+        "addl $320, %%eax\n\t"
+        "movsbl 30688(%%esi), %%ecx\n\t"
+        "cmpl %%edx, %%ecx\n\t"
+        "jle 5f\n"
+        "9:\n\t"
+        "ucomiss 100(%%edi), %%xmm0\n\t"
+        "ja 8b\n\t"
+        "cmpb $-1, 314(%%eax)\n\t"
+        "sete 313(%%eax)\n\t"
+        "jmp 3b\n\t"
+        "nop\n"
+        "5:\n\t"
+        "leal 32(%%esp), %%esp\n\t"
+        "popl %%ebx\n\t"
+        "popl %%esi\n\t"
+        "popl %%edi\n\t"
+        "ret\n"
+        "4:\n\t"
+        "cmpb $-1, 30691(%%esi)\n\t"
+        "je 5b\n\t"
+        "movb $-1, 30691(%%esi)\n\t"
+        "jmp 2b\n\t"
+        ".byte 0x8d, 0xb6, 0x00, 0x00, 0x00, 0x00\n"
+        "6:\n\t"
+        "movl $0, 4(%%edx)\n\t"
+        "jmp 1b\n"
+        "7:\n\t"
+        "leal 10944(%%esi), %%eax\n\t"
+        "call _ZL14UpdateZamArrowP11WORLDINFO_s\n\t"
+        "jmp 1b"
+        :
+        :
+        : "memory");
+    __builtin_unreachable();
 }
+#else
+void BountyHunterPursuitC_Update(WORLDINFO_s *world) {
+    GameObject_s *target = zamarrow.target;
+    if (target != NULL && (target->apiobj.field_0x1f8 & 0x1000) != 0 && target->apiobj.field_0x287 == 0) {
+        if (FadeSys.fade != 0.0f || pause_rndr_on != 0) {
+            zamarrow.anim_time = 0.0f;
+        } else {
+            f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
+#if defined(__i386__)
+            register f32 value asm("xmm0") = next;
+            register f32 one asm("xmm1") = 1.0f;
+            __asm__ __volatile__(
+                "movaps %%xmm1, %%xmm2\n\t"
+                "cmpltss %%xmm0, %%xmm2\n\t"
+                "andps %%xmm2, %%xmm1\n\t"
+                "andnps %%xmm0, %%xmm2\n\t"
+                "movaps %%xmm2, %%xmm0\n\t"
+                "orps %%xmm1, %%xmm0"
+                : "+x"(value), "+x"(one)
+                :
+                : "xmm2");
+            zamarrow.anim_time = value;
+#else
+            zamarrow.anim_time = next > 1.0f ? 1.0f : next;
+#endif
+            if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
+                UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
+        }
+    }
+
+    TRAFFICANIMSYS_s *traffic = world->trafficanim_sys;
+    if (traffic == NULL || player == NULL)
+        return;
+
+    f32 test_z = traffic_test_z;
+    if (test_z > player->apiobj.position.z) {
+        if (traffic->side == -1)
+            return;
+        traffic->side = -1;
+    } else {
+        if (traffic->side == 1)
+            return;
+        traffic->side = 1;
+    }
+
+    TRAFFICANIM_s *anim = traffic->anims;
+    for (i32 i = 0; i < traffic->anim_count; i++, anim++) {
+        if (test_z > player->apiobj.position.z)
+            reinterpret_cast<i8 *>(anim)[0x139] = anim->side == 1;
+        else
+            reinterpret_cast<i8 *>(anim)[0x139] = anim->side == -1;
+    }
+}
+#endif
 
 void BountyHunterPursuitD_Update(WORLDINFO_s *) {
 }
