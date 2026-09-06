@@ -662,7 +662,9 @@ void DookuC_Reset(WORLDINFO_s *world) {
     dooku_c.node.scene = NULL;
     dooku_c.node.special = NULL;
     dooku_c.node.display_special = NULL;
-    if (netclient == 0) {
+    register i32 client asm("esi") = netclient;
+    __asm__ __volatile__("" : "+S"(client));
+    if (client == 0) {
         dooku_c.total = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
         dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);
     }
