@@ -466,6 +466,7 @@ struct characterdata_s { /* PlaceHolder Structure */
     union {
         void *field11_0x24;
         PLAYERCHARACTERCONFIG_s *player_config;
+        GAMECHARACTERDATA_s *game_data;
     };
     union {
         undefined4 field12_0x28;
@@ -589,6 +590,12 @@ extern "C" {
     extern i16 id_COUNTDOOKU;
     extern i16 id_OBIWANKENOBIJEDIMASTER;
     extern i16 id_PADMECLAWED;
+    extern i16 id_LUMINARA;
+    extern i16 id_SHAAKTI;
+    extern i16 id_SUPERBATTLEDROID;
+    extern i16 id_BATTLEDROIDSECURITY;
+    extern i16 id_BATTLEDROIDGEONOSIAN;
+    extern i16 id_JARJAR;
     extern i16 id_GRIEVOUS;
     extern i16 id_THEEMPEROR;
     extern i16 id_SERVICECAR;
