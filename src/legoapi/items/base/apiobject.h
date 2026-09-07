@@ -896,7 +896,7 @@ typedef struct GameObject_s {
     void *field_0x10b8;                    // 0x10b8
     void (*move_override)(GameObject_s *); // 0x10bc
     u8 pad_10c0[0x10c4 - 0x10c0];
-    f32 ai_elapsed_time;                   // 0x10c4, accumulated until the next AI update
+    f32 ai_elapsed_time; // 0x10c4, accumulated until the next AI update
     union {
         // Position the AI restores the character to after a forced move.
         NUVEC ai_reset_position; // 0x10c8
