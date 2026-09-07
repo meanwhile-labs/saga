@@ -581,14 +581,17 @@ static inline bool KaminoC_CheckTile(i8 tile, i32 *player_tile) {
 
 void KaminoC_Update(WORLDINFO_s *world) {
     const u8 *progress = static_cast<const u8 *>(LevGizmo[0]->object);
+    bool hide_progress = false;
     if (GizmoGetOutput(world->gizmo_sys, LevGizmo[0], 0, 0)) {
-        GizmoSetVisibility(world->gizmo_sys, LevGizmo[1], 0, 1);
+        hide_progress = true;
     } else if ((progress[0x98] & 1) == 0) {
         GizmoActivate(world->gizmo_sys, LevGizmo[1], 1, 1);
         if (GizmoGetOutput(world->gizmo_sys, gizTurrets[0], 0, 0) &&
             GizmoGetOutput(world->gizmo_sys, gizTurrets[1], 0, 0))
-            GizmoSetVisibility(world->gizmo_sys, LevGizmo[1], 0, 1);
+            hide_progress = true;
     }
+    if (hide_progress)
+        GizmoSetVisibility(world->gizmo_sys, LevGizmo[1], 0, 1);
     kaminoc_netpacket->sounds = 0;
     SetGizAIMessage(gizaimessagesys, "NextDiscoTile", 0.0f, kaminodisco.next_tile_message);
     SetGizAIMessage(gizaimessagesys, "DiscoComplete", 0.0f, kaminodisco.complete_message);
