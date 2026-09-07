@@ -125,7 +125,7 @@ struct KAMINODISCO_s {
     nuhspecial_s on[16];
     u8 tiles[16];
     i8 special_count;
-    u8 state;
+    i8 state;
     i8 current_tile;
     i8 previous_tile;
     f32 timer;
@@ -1262,7 +1262,7 @@ struct JEDIB_s {
     i16 spawn_count;                 // 0x6300
     i16 active_count;                // 0x6302
     u16 stage;                       // 0x6304
-    u16 phase;                       // 0x6306
+    i16 phase;                       // 0x6306
     f32 timer;                       // 0x6308
     u32 seed;                        // 0x630c
     nuhspecial_s pillars[3][4];      // 0x6310, four parts per phase pillar
@@ -1665,153 +1665,161 @@ void JediB_Update(WORLDINFO_s *world) {
         }
     }
 
-    if (jedi_b.phase == 0) {
-        JEDIB_PHASE_s *phases[3];
-        phases[0] = jedi_b_phase1;
-        phases[1] = jedi_b_phase2;
-        phases[2] = jedi_b_phase3;
-        if (netclient == 0) {
-            i32 stage = jedi_b.stage;
-            if (stage > 2 && 3.0f > jedi_b.timer) {
-                jedi_b.timer += FRAMETIME;
-            } else {
-                stage++;
-                jedi_b.stage = stage;
-                if (stage == 6) {
-                    jedi_b.stage = 7;
-                } else if (stage >= 4 && stage <= 6) {
-                    // Mark a fresh set of arena slots as this phase's targets.
-                    for (i32 i = 0; i < jedi_b.spawn_count; i++)
-                        jedi_b.spawns[i].flags &= 0xe7;
-                    memset(jedi_b.target_flags, 0, sizeof(jedi_b.target_flags));
-                    i32 placed = 0;
-                    while (placed < (g_lowEndLevelBehaviour == 0 ? 6 : 4)) {
-                        i32 index = static_cast<i32>(NuRand(0)) % jedi_b.spawn_count;
-                        i16 id;
-                        if (jedi_b.stage == 4)
-                            id = id_BATTLEDROIDSECURITY;
-                        else if (jedi_b.stage == 5)
-                            id = (placed & 1) != 0 ? id_BATTLEDROIDSECURITY : id_SUPERBATTLEDROID;
-                        else
-                            id = (placed & 1) != 0 ? id_DROIDEKA : id_SUPERBATTLEDROID;
-                        for (;;) {
-                            JEDIB_SPAWN_s *slot = &jedi_b.spawns[index];
-                            if ((slot->flags & 8) == 0 && (slot->flags & 2) != 0 && slot->field_0x10 != id) {
-                                if (slot->object != NULL) {
-                                    RemoveGameObject(slot->object, 1);
-                                    slot->object = NULL;
-                                    slot->flags &= 0xfe;
+    switch (jedi_b.phase) {
+        case 0: {
+            JEDIB_PHASE_s *phases[3];
+            phases[0] = jedi_b_phase1;
+            phases[1] = jedi_b_phase2;
+            phases[2] = jedi_b_phase3;
+            if (netclient == 0) {
+                i32 stage = jedi_b.stage;
+                if (stage > 2 && 3.0f > jedi_b.timer) {
+                    jedi_b.timer += FRAMETIME;
+                } else {
+                    stage++;
+                    jedi_b.stage = stage;
+                    if (stage == 6) {
+                        jedi_b.stage = 7;
+                    } else if (stage >= 4 && stage <= 6) {
+                        // Mark a fresh set of arena slots as this phase's targets.
+                        for (i32 i = 0; i < jedi_b.spawn_count; i++)
+                            jedi_b.spawns[i].flags &= 0xe7;
+                        memset(jedi_b.target_flags, 0, sizeof(jedi_b.target_flags));
+                        i32 placed = 0;
+                        while (placed < (g_lowEndLevelBehaviour == 0 ? 6 : 4)) {
+                            i32 index = static_cast<i32>(NuRand(0)) % jedi_b.spawn_count;
+                            i16 id;
+                            if (jedi_b.stage == 4)
+                                id = id_BATTLEDROIDSECURITY;
+                            else if (jedi_b.stage == 5)
+                                id = (placed & 1) != 0 ? id_BATTLEDROIDSECURITY : id_SUPERBATTLEDROID;
+                            else
+                                id = (placed & 1) != 0 ? id_DROIDEKA : id_SUPERBATTLEDROID;
+                            for (;;) {
+                                JEDIB_SPAWN_s *slot = &jedi_b.spawns[index];
+                                if ((slot->flags & 8) == 0 && (slot->flags & 2) != 0 && slot->field_0x10 != id) {
+                                    if (slot->object != NULL) {
+                                        RemoveGameObject(slot->object, 1);
+                                        slot->object = NULL;
+                                        slot->flags &= 0xfe;
+                                    }
+                                    slot->field_0x10 = id;
+                                    jedi_b.target_ids[placed] = id;
+                                    placed++;
+                                    slot->flags |= 8;
+                                    break;
                                 }
-                                slot->field_0x10 = id;
-                                jedi_b.target_ids[placed] = id;
-                                placed++;
-                                slot->flags |= 8;
+                                index++;
+                                if (jedi_b.spawn_count <= index)
+                                    index = 0;
+                            }
+                        }
+                        jedi_b.objective_timer = 0.0f;
+                    } else if (stage >= 1 && stage <= 3) {
+                        // Place this phase's wave on the "phase<n>_<m>" locators.
+                        for (JEDIB_PHASE_s *entry = phases[stage - 1]; entry->id != NULL; entry++) {
+                            if (jedi_b.active_count > 7)
+                                break;
+                            if (g_lowEndLevelBehaviour != 0 && jedi_b.active_count == 5)
+                                break;
+                            char name[0x10];
+                            sprintf(name, "phase%d_%d", jedi_b.stage, jedi_b.active_count + 1);
+                            AILOCATOR_s *locator = AIPathFindLocator(world->ai_sys, name);
+                            if (locator == NULL)
+                                continue;
+                            JEDIB_SPAWN_s *slot = &jedi_b.active[jedi_b.active_count];
+                            slot->locator = *locator;
+                            slot->object =
+                                AddDynamicCreature(*entry->id, &locator->position, locator->flags, entry->script,
+                                                   &locator->path_info, NULL, 1, NULL, NULL, 0, 0);
+                            if (slot->object == NULL)
+                                continue;
+                            slot->field_0x10 = *entry->id;
+                            slot->object->field_0xefb |= 1;
+                            slot->object->ai.locator = locator;
+                            slot->object->field_0xeb4 = reinterpret_cast<u32>(JediBKilledCallback);
+                            jedi_b.active_count = jedi_b.active_count + 1;
+                        }
+                    }
+                    if (jedi_b.phase_message == NULL)
+                        jedi_b.phase_message = CheckGizAIMessage(gizaimessagesys, "Phase", NULL);
+                    if (jedi_b.phase_complete == NULL)
+                        jedi_b.phase_complete = CheckGizAIMessage(gizaimessagesys, "PhaseComplete", NULL);
+                    if (jedi_b.objectives_left == NULL)
+                        jedi_b.objectives_left = CheckGizAIMessage(gizaimessagesys, "ObjectivesLeft", NULL);
+                    if (jedi_b.restrain[0] == NULL)
+                        jedi_b.restrain[0] = CheckGizAIMessage(gizaimessagesys, "RestrainPadme", NULL);
+                    if (jedi_b.restrain[1] == NULL)
+                        jedi_b.restrain[1] = CheckGizAIMessage(gizaimessagesys, "RestrainAnakin", NULL);
+                    if (jedi_b.restrain[2] == NULL)
+                        jedi_b.restrain[2] = CheckGizAIMessage(gizaimessagesys, "RestrainObiWan", NULL);
+                    jedi_b.phase_message->value = static_cast<f32>(jedi_b.stage);
+                    jedi_b.objectives_left->value = static_cast<f32>(jedi_b.active_count);
+                    jedi_b.phase_complete->value = 0.0f;
+                    jedi_b.timer = 0.0f;
+                    jedi_b.phase = 1;
+                }
+            }
+            break;
+        }
+        case 1: {
+            jedi_b.timer += FRAMETIME;
+            if (jedi_b.stage <= 7) {
+                bool advance = false;
+                if (jedi_b.stage >= 1 && jedi_b.stage <= 3) {
+                    jedi_b.objectives_left->value = static_cast<f32>(jedi_b.active_count);
+                    advance = jedi_b.phase_complete->value == 1.0f;
+                } else if (jedi_b.stage >= 4 && jedi_b.stage <= 6) {
+                    if (g_lowEndLevelBehaviour != 0) {
+                        if (jedi_b.target_flags[0] != 0 && jedi_b.target_flags[1] != 0 && jedi_b.target_flags[2] != 0)
+                            advance = jedi_b.target_flags[3] != 0;
+                    } else {
+                        if (jedi_b.target_flags[0] != 0 && jedi_b.target_flags[1] != 0 && jedi_b.target_flags[2] != 0 &&
+                            jedi_b.target_flags[3] != 0 && jedi_b.target_flags[4] != 0)
+                            advance = jedi_b.target_flags[5] != 0;
+                    }
+                    jedi_b.objective_timer += FRAMETIME;
+                    if (jedi_b.objective_timer > 5.0f) {
+                        // Point the panel at one of the remaining targets.
+                        i32 marked = -1;
+                        for (i32 i = 0; i < jedi_b.spawn_count; i++) {
+                            if ((jedi_b.spawns[i].flags & 0x10) != 0) {
+                                marked = -1;
                                 break;
                             }
-                            index++;
-                            if (jedi_b.spawn_count <= index)
-                                index = 0;
+                            if ((jedi_b.spawns[i].flags & 8) != 0)
+                                marked = i;
                         }
+                        if (marked != -1)
+                            jedi_b.spawns[marked].flags |= 0x10;
+                        jedi_b.objective_timer = 0.0f;
                     }
-                    jedi_b.objective_timer = 0.0f;
-                } else if (stage >= 1 && stage <= 3) {
-                    // Place this phase's wave on the "phase<n>_<m>" locators.
-                    for (JEDIB_PHASE_s *entry = phases[stage - 1]; entry->id != NULL; entry++) {
-                        if (jedi_b.active_count > 7)
-                            break;
-                        if (g_lowEndLevelBehaviour != 0 && jedi_b.active_count == 5)
-                            break;
-                        char name[0x10];
-                        sprintf(name, "phase%d_%d", jedi_b.stage, jedi_b.active_count + 1);
-                        AILOCATOR_s *locator = AIPathFindLocator(world->ai_sys, name);
-                        if (locator == NULL)
-                            continue;
-                        JEDIB_SPAWN_s *slot = &jedi_b.active[jedi_b.active_count];
-                        slot->locator = *locator;
-                        slot->object = AddDynamicCreature(*entry->id, &locator->position, locator->flags, entry->script,
-                                                          &locator->path_info, NULL, 1, NULL, NULL, 0, 0);
-                        if (slot->object == NULL)
-                            continue;
-                        slot->field_0x10 = *entry->id;
-                        slot->object->field_0xefb |= 1;
-                        slot->object->ai.locator = locator;
-                        slot->object->field_0xeb4 = reinterpret_cast<u32>(JediBKilledCallback);
-                        jedi_b.active_count = jedi_b.active_count + 1;
-                    }
+                } else if (jedi_b.stage == 7) {
+                    if (jedi_b.boss == NULL)
+                        jedi_b.boss = FindGameObject(id_JANGOFETT, 1, 1, 0, 0);
+                    if (jedi_b.boss != NULL)
+                        advance = jedi_b.boss->apiobj.field_0x287 != 0 || jedi_b.boss->current_hp == 0;
                 }
-                if (jedi_b.phase_message == NULL)
-                    jedi_b.phase_message = CheckGizAIMessage(gizaimessagesys, "Phase", NULL);
-                if (jedi_b.phase_complete == NULL)
-                    jedi_b.phase_complete = CheckGizAIMessage(gizaimessagesys, "PhaseComplete", NULL);
-                if (jedi_b.objectives_left == NULL)
-                    jedi_b.objectives_left = CheckGizAIMessage(gizaimessagesys, "ObjectivesLeft", NULL);
-                if (jedi_b.restrain[0] == NULL)
-                    jedi_b.restrain[0] = CheckGizAIMessage(gizaimessagesys, "RestrainPadme", NULL);
-                if (jedi_b.restrain[1] == NULL)
-                    jedi_b.restrain[1] = CheckGizAIMessage(gizaimessagesys, "RestrainAnakin", NULL);
-                if (jedi_b.restrain[2] == NULL)
-                    jedi_b.restrain[2] = CheckGizAIMessage(gizaimessagesys, "RestrainObiWan", NULL);
-                jedi_b.phase_message->value = static_cast<f32>(jedi_b.stage);
-                jedi_b.objectives_left->value = static_cast<f32>(jedi_b.active_count);
-                jedi_b.phase_complete->value = 0.0f;
-                jedi_b.timer = 0.0f;
-                jedi_b.phase = 1;
+                if (advance) {
+                    jedi_b.timer = 0.0f;
+                    jedi_b.phase = 2;
+                }
             }
+            break;
         }
-    } else if (jedi_b.phase == 1) {
-        jedi_b.timer += FRAMETIME;
-        if (jedi_b.stage <= 7) {
-            bool advance = false;
-            if (jedi_b.stage >= 1 && jedi_b.stage <= 3) {
-                jedi_b.objectives_left->value = static_cast<f32>(jedi_b.active_count);
-                advance = jedi_b.phase_complete->value == 1.0f;
-            } else if (jedi_b.stage >= 4 && jedi_b.stage <= 6) {
-                if (g_lowEndLevelBehaviour != 0) {
-                    if (jedi_b.target_flags[0] != 0 && jedi_b.target_flags[1] != 0 && jedi_b.target_flags[2] != 0)
-                        advance = jedi_b.target_flags[3] != 0;
-                } else {
-                    if (jedi_b.target_flags[0] != 0 && jedi_b.target_flags[1] != 0 && jedi_b.target_flags[2] != 0 &&
-                        jedi_b.target_flags[3] != 0 && jedi_b.target_flags[4] != 0)
-                        advance = jedi_b.target_flags[5] != 0;
+        case 2: {
+            if (0.1f > jedi_b.timer) {
+                jedi_b.timer += FRAMETIME;
+            } else {
+                if (jedi_b.stage > 6) {
+                    if (FreePlay == 0)
+                        NewLData = JEDI_OUTRO_LDATA;
+                    CompleteLevel(world);
                 }
-                jedi_b.objective_timer += FRAMETIME;
-                if (jedi_b.objective_timer > 5.0f) {
-                    // Point the panel at one of the remaining targets.
-                    i32 marked = -1;
-                    for (i32 i = 0; i < jedi_b.spawn_count; i++) {
-                        if ((jedi_b.spawns[i].flags & 0x10) != 0) {
-                            marked = -1;
-                            break;
-                        }
-                        if ((jedi_b.spawns[i].flags & 8) != 0)
-                            marked = i;
-                    }
-                    if (marked != -1)
-                        jedi_b.spawns[marked].flags |= 0x10;
-                    jedi_b.objective_timer = 0.0f;
-                }
-            } else if (jedi_b.stage == 7) {
-                if (jedi_b.boss == NULL)
-                    jedi_b.boss = FindGameObject(id_JANGOFETT, 1, 1, 0, 0);
-                if (jedi_b.boss != NULL)
-                    advance = jedi_b.boss->apiobj.field_0x287 != 0 || jedi_b.boss->current_hp == 0;
-            }
-            if (advance) {
                 jedi_b.timer = 0.0f;
-                jedi_b.phase = 2;
+                jedi_b.phase = 0;
             }
-        }
-    } else if (jedi_b.phase == 2) {
-        if (0.1f > jedi_b.timer) {
-            jedi_b.timer += FRAMETIME;
-        } else {
-            if (jedi_b.stage > 6) {
-                if (FreePlay == 0)
-                    NewLData = JEDI_OUTRO_LDATA;
-                CompleteLevel(world);
-            }
-            jedi_b.timer = 0.0f;
-            jedi_b.phase = 0;
+            break;
         }
     }
 
