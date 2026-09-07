@@ -588,6 +588,7 @@ extern "C" {
     extern i16 id_NEW_REPUBLIC_GUNSHIP;
     extern i16 id_COUNTDOOKU;
     extern i16 id_OBIWANKENOBIJEDIMASTER;
+    extern i16 id_PADMECLAWED;
     extern i16 id_GRIEVOUS;
     extern i16 id_THEEMPEROR;
     extern i16 id_SERVICECAR;

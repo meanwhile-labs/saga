@@ -6,6 +6,7 @@
 #include "legoapi/world/level.h"
 #include "globals.h"
 #include "legoapi/characters/core/players.h"
+#include "legoapi/characters/core/character.h"
 #include "legoapi/characters/motion.h"
 #include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
@@ -71,6 +72,7 @@ extern "C" {
     i32 jedib_max_baddies_per_goody = 3;
     i32 jedib_min_baddies_per_goody = 1;
     u32 jedib_seed = 17;
+    i16 *JediB_playerids[3] = {&id_PADMECLAWED, &id_ANAKINPADAWAN, &id_OBIWANKENOBIJEDIMASTER};
     void *jedib_netpacket;
     i32 jedib_n_active;
     i32 jedib_n_drawn;
@@ -95,6 +97,7 @@ extern "C" {
 }
 
 NUGSPLINE *edSpline_SplineFind(nugscn_s *, char *);
+void ClearAICreatures();
 void UpdatePaintPuzzle(WORLDINFO_s *);
 GIZTURRET_s *GizTurret_FindByName(GIZTURRETSYS_s *, char *);
 
@@ -986,9 +989,10 @@ void FactoryG_Update(WORLDINFO_s *world) {
 // reach; the slots that follow it are the baddies placed around it.
 struct JEDIB_SPAWN_s {
     NUVEC position;      // 0x00
-    i32 angle;           // 0x0c, orbit angle of a baddie around its goody
-    u8 filler_0x10[0x8]; // 0x10
-    JEDIB_SPAWN_s *link; // 0x18, goody <-> baddie cross link
+    i32 angle;            // 0x0c, orbit angle of a baddie around its goody
+    i32 field_0x10;       // 0x10, -1 while the slot holds no character
+    GameObject_s *object; // 0x14, the character spawned into this slot
+    JEDIB_SPAWN_s *link;  // 0x18, goody <-> baddie cross link
     AILOCATOR_s locator; // 0x1c
     u8 filler_0x58[0x4]; // 0x58
     u8 flags;            // 0x5c, bit 1 marks a baddie
@@ -997,11 +1001,29 @@ struct JEDIB_SPAWN_s {
 DECOMP_ASSERT(sizeof(JEDIB_SPAWN_s) == 0x60, "Jedi_B spawn slot size");
 
 struct JEDIB_s {
-    JEDIB_SPAWN_s spawns[264];              // 0x0000
-    i16 spawn_count;                        // 0x6300
-    u8 filler_0x6302[0x630c - 0x6302];      // 0x6302
-    u32 seed;                               // 0x630c
-    u8 filler_0x6310[0x63ec - 0x6310];      // 0x6310
+    JEDIB_SPAWN_s spawns[256];        // 0x0000
+    JEDIB_SPAWN_s active[8];          // 0x6000, the slots currently populated
+    i16 spawn_count;                  // 0x6300
+    i16 active_count;                 // 0x6302
+    i16 field_0x6304;                 // 0x6304
+    i16 field_0x6306;                 // 0x6306
+    u8 filler_0x6308[0x4];            // 0x6308
+    u32 seed;                         // 0x630c
+    nuhspecial_s pillars[3][4];       // 0x6310, four parts per phase pillar
+    GameObject_s *players[3];         // 0x63a0
+    GIZAIMESSAGE_s *phase;            // 0x63ac
+    GIZAIMESSAGE_s *phase_complete;   // 0x63b0
+    GIZAIMESSAGE_s *objectives_left;  // 0x63b4
+    GIZAIMESSAGE_s *restrain_padme;   // 0x63b8
+    GIZAIMESSAGE_s *restrain_anakin;  // 0x63bc
+    GIZAIMESSAGE_s *restrain_obiwan;  // 0x63c0
+    i16 target_ids[6];                // 0x63c4
+    u8 target_flags[6];               // 0x63d0
+    u8 filler_0x63d6[0x2];            // 0x63d6
+    GameObject_s *boss;               // 0x63d8
+    u8 filler_0x63dc[0xc];            // 0x63dc
+    u8 flags;                         // 0x63e8
+    u8 filler_0x63e9[0x3];            // 0x63e9
 };
 DECOMP_ASSERT(sizeof(JEDIB_s) == 0x63ec, "Jedi_B state size");
 static JEDIB_s jedi_b;
@@ -1114,7 +1136,53 @@ void JediB_Init(WORLDINFO_s *world) {
     LevBlowUp[0] = reinterpret_cast<i32>(GizmoBlowUp_FindByName(world, "Thermo_011"));
 }
 
-void JediB_Reset(WORLDINFO_s *) {
+// The player object holding the character named by JediB_playerids[slot].
+static GameObject_s *JediB_FindPlayer(i32 slot) {
+    for (i32 i = 0; i < 8; i++) {
+        if (Player[i] != NULL && Player[i]->id == *JediB_playerids[slot])
+            return Player[i];
+    }
+    return NULL;
+}
+
+void JediB_Reset(WORLDINFO_s *world) {
+    if (Mission_Active(MissionSys) != NULL)
+        return;
+    if (netclient != 0)
+        return;
+    for (i32 i = 0; i < jedi_b.spawn_count; i++) {
+        jedi_b.spawns[i].field_0x10 = -1;
+        jedi_b.spawns[i].object = NULL;
+        jedi_b.spawns[i].flags &= 0xe6;
+    }
+    for (i32 i = 0; i < jedi_b.active_count; i++) {
+        jedi_b.active[i].object = NULL;
+        jedi_b.active[i].flags &= 0xfe;
+    }
+    ClearAICreatures();
+    for (i32 phase = 1; phase <= 3; phase++) {
+        char name[0x20];
+        nuhspecial_s *pillar = jedi_b.pillars[phase - 1];
+        sprintf(name, "pillar%d_01a", phase);
+        NuSpecialFind(world->current_gscn, &pillar[0], name, 1);
+        sprintf(name, "pillar%d_01b", phase);
+        NuSpecialFind(world->current_gscn, &pillar[1], name, 1);
+        sprintf(name, "pillar%d_01c", phase);
+        NuSpecialFind(world->current_gscn, &pillar[2], name, 1);
+        sprintf(name, "pillar%d_01ba", phase);
+        NuSpecialFind(world->current_gscn, &pillar[3], name, 1);
+        jedi_b.players[phase - 1] = NULL;
+        if (FreePlay == 0)
+            jedi_b.players[phase - 1] = JediB_FindPlayer(phase - 1);
+    }
+    jedi_b.phase = SetGizAIMessage(gizaimessagesys, "Phase", 0.0f, NULL);
+    jedi_b.phase_complete = SetGizAIMessage(gizaimessagesys, "PhaseComplete", 0.0f, NULL);
+    jedi_b.objectives_left = SetGizAIMessage(gizaimessagesys, "ObjectivesLeft", 0.0f, NULL);
+    jedi_b.restrain_padme = SetGizAIMessage(gizaimessagesys, "RestrainPadme", 0.0f, NULL);
+    jedi_b.restrain_anakin = SetGizAIMessage(gizaimessagesys, "RestrainAnakin", 0.0f, NULL);
+    jedi_b.restrain_obiwan = SetGizAIMessage(gizaimessagesys, "RestrainObiWan", 0.0f, NULL);
+    jedi_b.boss = NULL;
+    jedi_b.flags &= 0xfc;
 }
 
 void JediB_Update(WORLDINFO_s *) {
