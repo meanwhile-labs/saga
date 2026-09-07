@@ -347,6 +347,7 @@ void BountyHunterPursuitD_Update(WORLDINFO_s *) {
         return;
     GIZMOBLOWUP_s *nearest = NULL;
     f32 distance = 1000000000.0f;
+    NUVEC direction;
     for (i32 i = 0; i < 12; i++) {
         if (LevGizmo[i] != NULL) {
             GIZMOBLOWUP_s *blowup = static_cast<GIZMOBLOWUP_s *>(LevGizmo[i]->object);
@@ -365,7 +366,6 @@ void BountyHunterPursuitD_Update(WORLDINFO_s *) {
         return;
     }
     if (distance < 1000000.0f) {
-        NUVEC direction;
         f32 length = NuVecDist(&LevGameObject[0]->apiobj.collision_position, &nearest->position, &direction);
         NuLgtLaser(0, 1.0f, 1.0f, 0.01f, &nearest->position, &direction, 0xff808040, 1.5f, length);
     }
