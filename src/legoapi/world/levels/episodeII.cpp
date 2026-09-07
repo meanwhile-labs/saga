@@ -11,13 +11,17 @@
 #include "legoapi/gizmo/base/GizForceObjectInterface.h"
 #include "legoapi/gizmos/object/newblowup.h"
 #include "legoapi/gizmos/object/gizobstacles.h"
+#include "legoapi/gizmos/object/gizpanel.h"
 #include "legoapi/gizmos/traps/gizforce.h"
+#include "legoapi/gizmos/traps/gizturrets.h"
+#include "legoapi/gizmos/trigger/gizaimessage.h"
 #include "legoapi/ai/core/ai_sys_stubs.h"
 #include "legoapi/audio/sfx.h"
 #include "legoapi/cutscenes/cutscenes.h"
 #include "legoapi/items/base/collection.h"
 #include "legoapi/items/objects/gameobjects.h"
 #include "legoapi/legoapi_types.h"
+#include "legoapi/menus/core/gamemessage.h"
 #include "legoapi/world/levels/levels.h"
 #include "legoapi/render/core/render.h"
 #include "nu2api/nucore/nugcutscene.h"
@@ -25,6 +29,7 @@
 #include "nu2api/nu3d/nutex.h"
 #include "nu2api/numath/nufloat.h"
 #include "nu2api/numath/numtx.h"
+#include "nu2api/numath/nurand.h"
 #include "nu2api/numath/nutrig.h"
 // This level's view of the shared 16-byte LevFlag scratch. byte0 holds the
 // bonus-gunship milestone state; byte1 a secondary state.
@@ -50,12 +55,23 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 extern "C" {
     void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
     float FactoryBConveyorStopFrame = 28.0f;
-    void *kaminoc_netpacket;
+    struct KAMINOC_NETPACKET_s *kaminoc_netpacket;
     void *disco_off_spina[3];
     nuhspecial_s disco_on_spin[3];
+    nuhspecial_s walllights[2];
+    nuhspecial_s walllights_disco[2];
+    nuhspecial_s striplights[2];
+    nuhspecial_s discolights[2];
+    nuhspecial_s discorm_wall_on;
+    nuhspecial_s discorm_wall_off;
+    GIZMO_s *gizTurrets[2];
+    i32 last;
+    i32 FindPlatInst(i32 instance);
+    void NuLgtLaser(i32, f32, f32, f32, NUVEC *, NUVEC *, u32, f32, f32);
 }
 
 void UpdatePaintPuzzle(WORLDINFO_s *);
+GIZTURRET_s *GizTurret_FindByName(GIZTURRETSYS_s *, char *);
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
 
@@ -64,20 +80,36 @@ void UpdatePaintPuzzle(WORLDINFO_s *);
 static f32 FactoryBConveyorXSpeed;
 static f32 FactoryBConveyorZSpeed;
 struct KAMINODISCO_s {
-    u32 fields_0x00[4];
-    i8 special_count; // 0x10
-    u8 state; // 0x11: 0/1/2, queried by KaminoDiscoOn
-    i8 current_tile; // 0x12
-    i8 previous_tile; // 0x13
-    u32 field_0x14;
-    u8 field_0x18;
-    u8 pad_0x19[3];
+    AIAREA_s *area;
+    nuhspecial_s off[16];
+    nuhspecial_s flash[16];
+    nuhspecial_s select[16];
+    nuhspecial_s finish[16];
+    nuhspecial_s on[16];
+    u8 tiles[16];
+    i8 special_count;
+    u8 state;
+    i8 current_tile;
+    i8 previous_tile;
+    f32 timer;
+    u8 completion_sound_played;
+    u8 pad[3];
     GIZAIMESSAGE_s *next_tile_message;
     GIZAIMESSAGE_s *complete_message;
 };
-static_assert(sizeof(KAMINODISCO_s) == 0x24, "Kamino disco state size");
-static volatile KAMINODISCO_s kaminodisco;
-static u8 kaminodisco_specials[0x250];
+DECOMP_ASSERT(sizeof(KAMINODISCO_s) == 0x3e8, "Kamino disco state size");
+static KAMINODISCO_s kaminodisco;
+struct KAMINOC_NETPACKET_s {
+    i16 off;
+    i16 flash;
+    i16 select;
+    i16 finish;
+    i16 on;
+    i16 sounds;
+    u8 complete;
+    u8 pad;
+};
+DECOMP_ASSERT(sizeof(KAMINOC_NETPACKET_s) == 0xe, "Kamino C packet size");
 // Dooku_C level state (original _ZL7dooku_c, one 20-byte .bss object).
 struct DOOKUC_STATE_s {
     GIZAIMESSAGE_s *total; // 0x00
@@ -86,28 +118,31 @@ struct DOOKUC_STATE_s {
 };
 static struct DOOKUC_STATE_s dooku_c;
 
-struct kamino_e_state_s {
-    char pad_0x00[0x28];
-    f32 field_0x28; // 0x28
-};
-
-// Kamino_E level state (original _ZL8kamino_e, one 120-byte .bss object
-// holding more of the level's state than is modelled here). The fields must
-// stay in one object: handing `&special` to the NuSpecial API makes the whole
-// block address-taken, so `state` is reloaded after every call.
 struct KAMINO_E_s {
-    u8 pad_0x00[0x0c];
-    struct kamino_e_state_s *state; // 0x0c
-    u8 pad_0x10[0x0c];
-    void *special; // 0x1c, kamino_e named scene object
-    u8 pad_0x20[0x08];
-    GameObject_s *platforms[4]; // 0x28
-    GameObject_s *hit_platform; // 0x38
-    void *platform_enabled[4]; // 0x3c
-    u8 pad_0x4c[0x2a];
+    GIZAIMESSAGE_s *fight;
+    GIZAIMESSAGE_s *can_fire;
+    GIZAIMESSAGE_s *reset_turrets;
+    GIZAIMESSAGE_s *show_hearts;
+    GIZAIMESSAGE_s *mini_cut_started;
+    CUTINFO *intro;
+    AIAREA_s *landing_pad;
+    nuhspecial_s special; // 0x1c, Slave I
+    GIZTURRET_s *turrets[4];
+    GIZTURRET_s *hit_turret;
+    GIZPANEL_s *panels[4];
+    NUVEC position;
+    i32 pitch;
+    i32 yaw;
+    i32 roll;
+    i32 orbit_pitch;
+    i32 orbit_yaw;
+    f32 timer;
+    f32 elapsed;
+    u8 gun;
+    u8 state;
     u16 bolt_filter; // 0x76
 };
-static_assert(sizeof(struct KAMINO_E_s) == 0x78, "Kamino E state size");
+DECOMP_ASSERT(sizeof(struct KAMINO_E_s) == 0x78, "Kamino E state size");
 static struct KAMINO_E_s kamino_e;
 
 // Episode 2 level handlers, in the game's Episode_II progression:
@@ -216,288 +251,7 @@ void BountyHunterPursuitD_Reset(WORLDINFO_s *world) {
     LevGameObject[0] = GetNamedGameObject(world->ai_sys, "ai_zam");
 }
 
-#if defined(__i386__)
-static const f32 bounty_arrow_one asm("bounty_arrow_one") __attribute__((used)) = 1.0f;
-static const f32 bounty_arrow_phase asm("bounty_arrow_phase") __attribute__((used)) = 16384.0f;
-static const f32 bounty_arrow_alpha asm("bounty_arrow_alpha") __attribute__((used)) = 128.0f;
-static const char bounty_arrow_text[] asm("bounty_arrow_text") __attribute__((used)) = "";
-
-static __attribute__((noinline, noclone, used, regparm(1))) void UpdateZamArrow(WORLDINFO_s *)
-    asm("_ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6");
-static __attribute__((noinline, noclone, used, regparm(1))) void UpdateZamArrow(WORLDINFO_s *) {
-    __asm__ __volatile__(
-        "pushl %%edi\n\t"
-        "pushl %%esi\n\t"
-        "movl %%eax, %%esi\n\t"
-        "pushl %%ebx\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "leal -64(%%esp), %%esp\n\t"
-        "movl zamarrow@GOT(%%ebx), %%edi\n\t"
-        "movss bounty_arrow_one@GOTOFF(%%ebx), %%xmm0\n\t"
-        "movl (%%edi), %%eax\n\t"
-        "movl 400(%%eax), %%edx\n\t"
-        "movl %%edx, 52(%%esp)\n\t"
-        "movl 404(%%eax), %%edx\n\t"
-        "movl 408(%%eax), %%eax\n\t"
-        "movl %%edx, 56(%%esp)\n\t"
-        "movl $0, 36(%%esp)\n\t"
-        "movl $0, 16(%%esp)\n\t"
-        "movl $0x3d4ccccd, 8(%%esp)\n\t"
-        "addss 56(%%esp), %%xmm0\n\t"
-        "movl %%eax, 60(%%esp)\n\t"
-        "movl $0x10083, 32(%%esp)\n\t"
-        "leal 52(%%esp), %%eax\n\t"
-        "movl $63, 28(%%esp)\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl $63, 24(%%esp)\n\t"
-        "leal bounty_arrow_text@GOTOFF(%%ebx), %%eax\n\t"
-        "movl $255, 20(%%esp)\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "movss %%xmm0, 56(%%esp)\n\t"
-        "call _Z14AddGameMessagePcP7nuvec_sfS1_fhhhjf@PLT\n\t"
-        "testl %%eax, %%eax\n\t"
-        "movl %%eax, %%ecx\n\t"
-        "je 1f\n\t"
-        "movss bounty_arrow_phase@GOTOFF(%%ebx), %%xmm0\n\t"
-        "movl NuTrigTable@GOT(%%ebx), %%eax\n\t"
-        "mulss 4(%%edi), %%xmm0\n\t"
-        "cvttss2sil %%xmm0, %%edx\n\t"
-        "sarl %%edx\n\t"
-        "movss bounty_arrow_alpha@GOTOFF(%%ebx), %%xmm0\n\t"
-        "andl $0x7fff, %%edx\n\t"
-        "mulss (%%eax,%%edx,4), %%xmm0\n\t"
-        "movw $0x134, 230(%%ecx)\n\t"
-        "cvttss2sil %%xmm0, %%eax\n\t"
-        "movb %%al, 247(%%ecx)\n\t"
-        "movl (%%esi), %%eax\n\t"
-        "cmpb $0, 4942(%%eax)\n\t"
-        "je 1f\n\t"
-        "movl 4928(%%eax), %%edx\n\t"
-        "movl %%edx, 232(%%ecx)\n\t"
-        "movl 4932(%%eax), %%edx\n\t"
-        "movl 4936(%%eax), %%eax\n\t"
-        "movl %%edx, 236(%%ecx)\n\t"
-        "movl %%eax, 240(%%ecx)\n"
-        "1:\n\t"
-        "leal 64(%%esp), %%esp\n\t"
-        "popl %%ebx\n\t"
-        "popl %%esi\n\t"
-        "popl %%edi\n\t"
-        "ret"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
-}
-#else
-static __attribute__((noinline)) void UpdateZamArrow(WORLDINFO_s *world) {
-    NUVEC position = zamarrow.target->apiobj.upper_position;
-    position.y += 1.0f;
-    GAMEMESSAGE_s *message = static_cast<GAMEMESSAGE_s *>(
-        AddGameMessage("", &position, 0.05f, NULL, 0.0f, 0xff, 0x3f, 0x3f, 0x10083, 0.0f));
-    if (message == NULL)
-        return;
-    message->icon = 0x134;
-    i32 phase = static_cast<i32>(16384.0f * zamarrow.anim_time) >> 1;
-    message->alpha = static_cast<u8>(128.0f * NuTrigTable[phase & 0x7fff]);
-    u8 *state = *reinterpret_cast<u8 **>(world);
-    if (state[0x134e] != 0)
-        message->target_position = *reinterpret_cast<NUVEC *>(state + 0x1340);
-}
-#endif
-
-#if defined(__i386__)
-__attribute__((naked)) void BountyHunterPursuitA_Update(WORLDINFO_s *) {
-    __asm__ __volatile__(
-        "leal -44(%%esp), %%esp\n\t"
-        "movl %%ebx, 36(%%esp)\n\t"
-        "movl %%esi, 40(%%esp)\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "movl zamarrow@GOT(%%ebx), %%ecx\n\t"
-        "movl 48(%%esp), %%esi\n\t"
-        "movl (%%ecx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 1f\n\t"
-        "testb $16, 505(%%edx)\n\t"
-        "je 1f\n\t"
-        "cmpb $0, 647(%%edx)\n\t"
-        "jne 1f\n\t"
-        "xorps %%xmm0, %%xmm0\n\t"
-        "movl FadeSys@GOT(%%ebx), %%eax\n\t"
-        "ucomiss 4(%%eax), %%xmm0\n\t"
-        "jp 2f\n\t"
-        "jne 2f\n\t"
-        "movl pause_rndr_on@GOT(%%ebx), %%eax\n\t"
-        "movl (%%eax), %%eax\n\t"
-        "testl %%eax, %%eax\n\t"
-        "jne 2f\n\t"
-        "movss bounty_arrow_one@GOTOFF(%%ebx), %%xmm1\n\t"
-        "movl FRAMETIME@GOT(%%ebx), %%eax\n\t"
-        "movss (%%eax), %%xmm0\n\t"
-        "movaps %%xmm1, %%xmm2\n\t"
-        "addss %%xmm0, %%xmm0\n\t"
-        "movl GameTimer@GOT(%%ebx), %%eax\n\t"
-        "addss 4(%%ecx), %%xmm0\n\t"
-        "cmpltss %%xmm0, %%xmm2\n\t"
-        "andps %%xmm2, %%xmm1\n\t"
-        "andnps %%xmm0, %%xmm2\n\t"
-        "movaps %%xmm2, %%xmm0\n\t"
-        "orps %%xmm1, %%xmm0\n\t"
-        "movss %%xmm0, 4(%%ecx)\n\t"
-        "movl $0x3e4ccccd, 4(%%esp)\n\t"
-        "movss 8(%%eax), %%xmm0\n\t"
-        "movss %%xmm0, (%%esp)\n\t"
-        "call NuFmod@PLT\n\t"
-        "movss bounty_pursuit_tenth@GOTOFF(%%ebx), %%xmm0\n\t"
-        "fstps 28(%%esp)\n\t"
-        "movss 28(%%esp), %%xmm1\n\t"
-        "ucomiss %%xmm1, %%xmm0\n\t"
-        "ja 3f\n\t"
-        "leal 0(%%esi), %%esi\n\t"
-        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
-        "1:\n\t"
-        "movl 36(%%esp), %%ebx\n\t"
-        "movl 40(%%esp), %%esi\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "ret\n\t"
-        "leal 0(%%esi), %%esi\n"
-        "2:\n\t"
-        "movl $0, 4(%%ecx)\n\t"
-        "movl 36(%%esp), %%ebx\n\t"
-        "movl 40(%%esp), %%esi\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "ret\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n"
-        "3:\n\t"
-        "leal 10944(%%esi), %%eax\n\t"
-        "movl 36(%%esp), %%ebx\n\t"
-        "movl 40(%%esp), %%esi\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "jmp _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
-}
-#else
-void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
-    GameObject_s *target = zamarrow.target;
-    if (target == NULL || (target->apiobj.field_0x1f8 & 0x1000) == 0 || target->apiobj.field_0x287 != 0)
-        return;
-
-    if (FadeSys.fade != 0.0f || *(volatile i32 *)&pause_rndr_on != 0) {
-        zamarrow.anim_time = 0.0f;
-        return;
-    }
-
-    f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
-#if defined(__i386__)
-    register f32 value asm("xmm0") = next;
-    register f32 one asm("xmm1") = 1.0f;
-    __asm__ __volatile__(
-        "movaps %%xmm1, %%xmm2\n\t"
-        "cmpltss %%xmm0, %%xmm2\n\t"
-        "andps %%xmm2, %%xmm1\n\t"
-        "andnps %%xmm0, %%xmm2\n\t"
-        "movaps %%xmm2, %%xmm0\n\t"
-        "orps %%xmm1, %%xmm0"
-        : "+x"(value), "+x"(one)
-        :
-        : "xmm2");
-    zamarrow.anim_time = value;
-#else
-    zamarrow.anim_time = next > 1.0f ? 1.0f : next;
-#endif
-    if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
-        UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
-}
-#endif
-
-#if defined(__i386__)
-static const f32 bounty_pursuit_one asm("bounty_pursuit_one") __attribute__((used)) = 1.0f;
-static const f32 bounty_pursuit_tenth asm("bounty_pursuit_tenth") __attribute__((used)) = 0.1f;
-
-__attribute__((naked)) void BountyHunterPursuitB_Update(WORLDINFO_s *) {
-    __asm__ __volatile__(
-        "leal -44(%%esp), %%esp\n\t"
-        "movl %%ebx, 36(%%esp)\n\t"
-        "movl %%esi, 40(%%esp)\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "movl LevAIMessage@GOT(%%ebx), %%edx\n\t"
-        "movl 48(%%esp), %%esi\n\t"
-        "movl (%%edx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 1f\n\t"
-        "movss bounty_pursuit_one@GOTOFF(%%ebx), %%xmm0\n\t"
-        "ucomiss 40(%%edx), %%xmm0\n\t"
-        "jnp 2f\n"
-        "1:\n\t"
-        "movl 36(%%esp), %%ebx\n\t"
-        "movl 40(%%esp), %%esi\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "ret\n\t"
-        ".byte 0x8d, 0xb6, 0x00, 0x00, 0x00, 0x00\n"
-        "2:\n\t"
-        "jne 1b\n\t"
-        "movl zamarrow@GOT(%%ebx), %%eax\n\t"
-        "movl (%%eax), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 1b\n\t"
-        "testb $16, 505(%%edx)\n\t"
-        "je 1b\n\t"
-        "cmpb $0, 647(%%edx)\n\t"
-        "jne 1b\n\t"
-        "xorps %%xmm1, %%xmm1\n\t"
-        "movl FadeSys@GOT(%%ebx), %%edx\n\t"
-        "ucomiss 4(%%edx), %%xmm1\n\t"
-        "jp 3f\n\t"
-        "jne 3f\n\t"
-        "movl pause_rndr_on@GOT(%%ebx), %%edx\n\t"
-        "movl (%%edx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "jne 3f\n\t"
-        "movl FRAMETIME@GOT(%%ebx), %%edx\n\t"
-        "movaps %%xmm0, %%xmm2\n\t"
-        "movss (%%edx), %%xmm1\n\t"
-        "addss %%xmm1, %%xmm1\n\t"
-        "addss 4(%%eax), %%xmm1\n\t"
-        "cmpltss %%xmm1, %%xmm2\n\t"
-        "andps %%xmm2, %%xmm0\n\t"
-        "andnps %%xmm1, %%xmm2\n\t"
-        "movaps %%xmm2, %%xmm1\n\t"
-        "orps %%xmm0, %%xmm1\n\t"
-        "movss %%xmm1, 4(%%eax)\n\t"
-        "movl GameTimer@GOT(%%ebx), %%eax\n\t"
-        "movl $0x3e4ccccd, 4(%%esp)\n\t"
-        "movss 8(%%eax), %%xmm0\n\t"
-        "movss %%xmm0, (%%esp)\n\t"
-        "call NuFmod@PLT\n\t"
-        "movss bounty_pursuit_tenth@GOTOFF(%%ebx), %%xmm0\n\t"
-        "fstps 28(%%esp)\n\t"
-        "movss 28(%%esp), %%xmm1\n\t"
-        "ucomiss %%xmm1, %%xmm0\n\t"
-        "jbe 1b\n\t"
-        "leal 10944(%%esi), %%eax\n\t"
-        "movl 36(%%esp), %%ebx\n\t"
-        "movl 40(%%esp), %%esi\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "jmp _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6\n"
-        "3:\n\t"
-        "movl $0, 4(%%eax)\n\t"
-        "jmp 1b"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
-}
-#else
-void BountyHunterPursuitB_Update(WORLDINFO_s *world) {
-    if (LevAIMessage[0] == NULL || LevAIMessage[0]->value != 1.0f)
-        return;
+static inline void UpdateZamArrow(WORLDINFO_s *world) {
     GameObject_s *target = zamarrow.target;
     if (target == NULL || (target->apiobj.field_0x1f8 & 0x1000) == 0 || target->apiobj.field_0x287 != 0)
         return;
@@ -507,153 +261,34 @@ void BountyHunterPursuitB_Update(WORLDINFO_s *world) {
     }
     f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
     zamarrow.anim_time = next > 1.0f ? 1.0f : next;
-    if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
-        UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
-}
-#endif
+    if (!(NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f))
+        return;
 
-#if defined(__i386__)
-__attribute__((naked)) void BountyHunterPursuitC_Update(WORLDINFO_s *) {
-    __asm__ __volatile__(
-        "pushl %%edi\n\t"
-        "pushl %%esi\n\t"
-        "pushl %%ebx\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "leal -32(%%esp), %%esp\n\t"
-        "movl zamarrow@GOT(%%ebx), %%edx\n\t"
-        "movl 48(%%esp), %%esi\n\t"
-        "movl (%%edx), %%eax\n\t"
-        "testl %%eax, %%eax\n\t"
-        "je 1f\n\t"
-        "testb $16, 505(%%eax)\n\t"
-        "je 1f\n\t"
-        "cmpb $0, 647(%%eax)\n\t"
-        "jne 1f\n\t"
-        "xorps %%xmm0, %%xmm0\n\t"
-        "movl FadeSys@GOT(%%ebx), %%eax\n\t"
-        "ucomiss 4(%%eax), %%xmm0\n\t"
-        "jp 6f\n\t"
-        "jne 6f\n\t"
-        "movl pause_rndr_on@GOT(%%ebx), %%eax\n\t"
-        "movl (%%eax), %%eax\n\t"
-        "testl %%eax, %%eax\n\t"
-        "jne 6f\n\t"
-        "movss bounty_pursuit_one@GOTOFF(%%ebx), %%xmm1\n\t"
-        "movl FRAMETIME@GOT(%%ebx), %%eax\n\t"
-        "movss (%%eax), %%xmm0\n\t"
-        "movaps %%xmm1, %%xmm2\n\t"
-        "addss %%xmm0, %%xmm0\n\t"
-        "movl GameTimer@GOT(%%ebx), %%eax\n\t"
-        "addss 4(%%edx), %%xmm0\n\t"
-        "cmpltss %%xmm0, %%xmm2\n\t"
-        "andps %%xmm2, %%xmm1\n\t"
-        "andnps %%xmm0, %%xmm2\n\t"
-        "movaps %%xmm2, %%xmm0\n\t"
-        "orps %%xmm1, %%xmm0\n\t"
-        "movss %%xmm0, 4(%%edx)\n\t"
-        "movl $0x3e4ccccd, 4(%%esp)\n\t"
-        "movss 8(%%eax), %%xmm0\n\t"
-        "movss %%xmm0, (%%esp)\n\t"
-        "call NuFmod@PLT\n\t"
-        "movss bounty_pursuit_tenth@GOTOFF(%%ebx), %%xmm0\n\t"
-        "fstps 28(%%esp)\n\t"
-        "movss 28(%%esp), %%xmm1\n\t"
-        "ucomiss %%xmm1, %%xmm0\n\t"
-        "ja 7f\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n\t"
-        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
-        "1:\n\t"
-        "movl 20844(%%esi), %%esi\n\t"
-        "testl %%esi, %%esi\n\t"
-        "je 5f\n\t"
-        "movl player@GOT(%%ebx), %%eax\n\t"
-        "movl (%%eax), %%edi\n\t"
-        "testl %%edi, %%edi\n\t"
-        "je 5f\n\t"
-        "movl traffic_test_z@GOT(%%ebx), %%eax\n\t"
-        "movss (%%eax), %%xmm0\n\t"
-        "ucomiss 100(%%edi), %%xmm0\n\t"
-        "ja 4f\n\t"
-        "cmpb $1, 30691(%%esi)\n\t"
-        "je 5f\n\t"
-        "movb $1, 30691(%%esi)\n"
-        "2:\n\t"
-        "cmpb $0, 30688(%%esi)\n\t"
-        "movl %%esi, %%eax\n\t"
-        "jle 5f\n\t"
-        "xorl %%edx, %%edx\n\t"
-        "jmp 9f\n\t"
-        "leal 0(%%esi), %%esi\n"
-        "8:\n\t"
-        "cmpb $1, 314(%%eax)\n\t"
-        "sete 313(%%eax)\n"
-        "3:\n\t"
-        "addl $1, %%edx\n\t"
-        "addl $320, %%eax\n\t"
-        "movsbl 30688(%%esi), %%ecx\n\t"
-        "cmpl %%edx, %%ecx\n\t"
-        "jle 5f\n"
-        "9:\n\t"
-        "ucomiss 100(%%edi), %%xmm0\n\t"
-        "ja 8b\n\t"
-        "cmpb $-1, 314(%%eax)\n\t"
-        "sete 313(%%eax)\n\t"
-        "jmp 3b\n\t"
-        "nop\n"
-        "5:\n\t"
-        "leal 32(%%esp), %%esp\n\t"
-        "popl %%ebx\n\t"
-        "popl %%esi\n\t"
-        "popl %%edi\n\t"
-        "ret\n"
-        "4:\n\t"
-        "cmpb $-1, 30691(%%esi)\n\t"
-        "je 5b\n\t"
-        "movb $-1, 30691(%%esi)\n\t"
-        "jmp 2b\n\t"
-        ".byte 0x8d, 0xb6, 0x00, 0x00, 0x00, 0x00\n"
-        "6:\n\t"
-        "movl $0, 4(%%edx)\n\t"
-        "jmp 1b\n"
-        "7:\n\t"
-        "leal 10944(%%esi), %%eax\n\t"
-        "call _ZL14UpdateZamArrowP11WORLDINFO_s.isra.5.part.6\n\t"
-        "jmp 1b"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
+    NUVEC position = zamarrow.target->apiobj.upper_position;
+    position.y += 1.0f;
+    GAMEMESSAGE_s *message = static_cast<GAMEMESSAGE_s *>(
+        AddGameMessage(" ", &position, 0.05f, NULL, 0.0f, 0xff, 0x3f, 0x3f, 0x10083, 0.0f));
+    if (message == NULL)
+        return;
+    message->icon = 0x134;
+    i32 phase = static_cast<i32>(16384.0f * zamarrow.anim_time) >> 1;
+    message->alpha = static_cast<u8>(128.0f * NuTrigTable[phase & 0x7fff]);
+    const u8 *state = reinterpret_cast<const u8 *>(world->lev_objs);
+    if (state[0x134e] != 0)
+        memcpy(&message->color1, state + 0x1340, 3 * sizeof(u32));
 }
-#else
+
+void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
+    UpdateZamArrow(world);
+}
+
+void BountyHunterPursuitB_Update(WORLDINFO_s *world) {
+    if (LevAIMessage[0] != NULL && LevAIMessage[0]->value == 1.0f)
+        UpdateZamArrow(world);
+}
+
 void BountyHunterPursuitC_Update(WORLDINFO_s *world) {
-    GameObject_s *target = zamarrow.target;
-    if (target != NULL && (target->apiobj.field_0x1f8 & 0x1000) != 0 && target->apiobj.field_0x287 == 0) {
-        if (FadeSys.fade != 0.0f || pause_rndr_on != 0) {
-            zamarrow.anim_time = 0.0f;
-        } else {
-            f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
-#if defined(__i386__)
-            register f32 value asm("xmm0") = next;
-            register f32 one asm("xmm1") = 1.0f;
-            __asm__ __volatile__(
-                "movaps %%xmm1, %%xmm2\n\t"
-                "cmpltss %%xmm0, %%xmm2\n\t"
-                "andps %%xmm2, %%xmm1\n\t"
-                "andnps %%xmm0, %%xmm2\n\t"
-                "movaps %%xmm2, %%xmm0\n\t"
-                "orps %%xmm1, %%xmm0"
-                : "+x"(value), "+x"(one)
-                :
-                : "xmm2");
-            zamarrow.anim_time = value;
-#else
-            zamarrow.anim_time = next > 1.0f ? 1.0f : next;
-#endif
-            if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f)
-                UpdateZamArrow(reinterpret_cast<WORLDINFO_s *>(reinterpret_cast<u8 *>(world) + 0x2ac0));
-        }
-    }
+    UpdateZamArrow(world);
 
     TRAFFICANIMSYS_s *traffic = world->trafficanim_sys;
     if (traffic == NULL || player == NULL)
@@ -678,9 +313,34 @@ void BountyHunterPursuitC_Update(WORLDINFO_s *world) {
             reinterpret_cast<i8 *>(anim)[0x139] = anim->side == -1;
     }
 }
-#endif
 
 void BountyHunterPursuitD_Update(WORLDINFO_s *) {
+    if (LevGameObject[0] == NULL || LevGameObject[0]->field_0xe37 == 0)
+        return;
+    GIZMOBLOWUP_s *nearest = NULL;
+    f32 distance = 1000000000.0f;
+    for (i32 i = 0; i < 12; i++) {
+        if (LevGizmo[i] != NULL) {
+            GIZMOBLOWUP_s *blowup = static_cast<GIZMOBLOWUP_s *>(LevGizmo[i]->object);
+            if ((blowup->output_flags & 1) == 0) {
+                f32 candidate = NuVecDistSqr(&blowup->position, &LevGameObject[0]->apiobj.collision_position, NULL);
+                if (candidate < distance) {
+                    nearest = blowup;
+                    distance = candidate;
+                }
+            }
+        }
+    }
+    if (nearest == NULL) {
+        LevGameObject[0]->field_0xe37 = 0;
+        DrawBossHitPoints(LevGameObject[0]);
+        return;
+    }
+    if (distance < 1000000.0f) {
+        NUVEC direction;
+        f32 length = NuVecDist(&LevGameObject[0]->apiobj.collision_position, &nearest->position, &direction);
+        NuLgtLaser(0, 1.0f, 1.0f, 0.01f, &nearest->position, &direction, 0xff808040, 1.5f, length);
+    }
 }
 
 // ===========================================================================
@@ -706,25 +366,9 @@ i32 KaminoInside() {
     return 0;
 }
 
-#if defined(__i386__)
-__attribute__((naked)) i32 KaminoDiscoOn() {
-    __asm__ __volatile__(
-        "call __x86.get_pc_thunk.cx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ecx\n\t"
-        "xorl %%eax, %%eax\n\t"
-        "cmpb $2, kaminodisco+17@GOTOFF(%%ecx)\n\t"
-        "sete %%al\n\t"
-        "ret\n\t"
-        :
-        :
-        : "eax", "ecx", "memory");
-    __builtin_unreachable();
-}
-#else
 i32 KaminoDiscoOn() {
     return kaminodisco.state == 2;
 }
-#endif
 
 i32 KaminoInDiscoRoom() {
     i32 r = 0;
@@ -743,203 +387,307 @@ void KaminoA_AlwaysUpdate(WORLDINFO_s *) {
     object_switches[1] = v;
 }
 
-void KaminoC_Init(WORLDINFO_s *) {
+void KaminoC_Init(WORLDINFO_s *world) {
+    memset(&kaminodisco, 0, sizeof(kaminodisco));
+    kaminoc_netpacket = static_cast<KAMINOC_NETPACKET_s *>(SetLevelHack(sizeof(KAMINOC_NETPACKET_s)));
+    char name[32];
+    for (kaminodisco.special_count = 0; kaminodisco.special_count < 16; kaminodisco.special_count++) {
+        if (kaminodisco.special_count < 9)
+            sprintf(name, "dot_off_0%d", kaminodisco.special_count + 1);
+        else
+            sprintf(name, "dot_off_%d", kaminodisco.special_count + 1);
+        NuSpecialFind(WORLD->current_gscn, &kaminodisco.off[kaminodisco.special_count], name, 1);
+        if (kaminodisco.special_count < 9)
+            sprintf(name, "dot_flash_0%d", kaminodisco.special_count + 1);
+        else
+            sprintf(name, "dot_flash_%d", kaminodisco.special_count + 1);
+        NuSpecialFind(WORLD->current_gscn, &kaminodisco.flash[kaminodisco.special_count], name, 1);
+        if (kaminodisco.special_count < 9)
+            sprintf(name, "dot_select_0%d", kaminodisco.special_count + 1);
+        else
+            sprintf(name, "dot_select_%d", kaminodisco.special_count + 1);
+        NuSpecialFind(WORLD->current_gscn, &kaminodisco.select[kaminodisco.special_count], name, 1);
+        if (kaminodisco.special_count < 9)
+            sprintf(name, "dot_finish_0%d", kaminodisco.special_count + 1);
+        else
+            sprintf(name, "dot_finish_%d", kaminodisco.special_count + 1);
+        NuSpecialFind(WORLD->current_gscn, &kaminodisco.finish[kaminodisco.special_count], name, 1);
+        if (kaminodisco.special_count < 9)
+            sprintf(name, "dot_on_0%d", kaminodisco.special_count + 1);
+        else
+            sprintf(name, "dot_on_%d", kaminodisco.special_count + 1);
+        NuSpecialFind(WORLD->current_gscn, &kaminodisco.on[kaminodisco.special_count], name, 1);
+        if (!NuSpecialExistsFn(&kaminodisco.off[kaminodisco.special_count]) ||
+            !NuSpecialExistsFn(&kaminodisco.flash[kaminodisco.special_count]) ||
+            !NuSpecialExistsFn(&kaminodisco.select[kaminodisco.special_count]) ||
+            !NuSpecialExistsFn(&kaminodisco.finish[kaminodisco.special_count]))
+            break;
+    }
+    kaminodisco.area = AISysFindArea(WORLD->ai_sys, "DISCO");
+    NuSpecialFind(WORLD->current_gscn, &walllights[0], "walllights1", 1);
+    NuSpecialFind(WORLD->current_gscn, &walllights[1], "walllights2", 1);
+    NuSpecialFind(WORLD->current_gscn, &walllights_disco[0], "walllights1_disco", 1);
+    NuSpecialFind(WORLD->current_gscn, &walllights_disco[1], "walllights2_disco", 1);
+    NuSpecialFind(WORLD->current_gscn, &striplights[0], "striplights1", 1);
+    NuSpecialFind(WORLD->current_gscn, &striplights[1], "striplights1b", 1);
+    NuSpecialFind(WORLD->current_gscn, &discolights[0], "discolight1", 1);
+    NuSpecialFind(WORLD->current_gscn, &discolights[1], "discolight2", 1);
+    NuSpecialFind(WORLD->current_gscn, &discorm_wall_on, "discorm_wall_on", 1);
+    NuSpecialFind(WORLD->current_gscn, &discorm_wall_off, "discorm_wall_off", 1);
+    for (i32 i = 0; i < 3; i++) {
+        sprintf(name, "disco_on_spin%d", i + 3);
+        NuSpecialFind(WORLD->current_gscn, &disco_on_spin[i], name, 1);
+        if (netclient == 0) {
+            sprintf(name, "disco_off%d", i + 1);
+            disco_off_spina[i] = GizmoFindByName(world->gizmo_sys, force_gizmotype_id, name);
+        }
+    }
+    if (netclient == 0) {
+        gizTurrets[0] = GizmoFindByName(world->gizmo_sys, turret_gizmotype_id, "turret01");
+        gizTurrets[1] = GizmoFindByName(world->gizmo_sys, turret_gizmotype_id, "turret02");
+        GIZTURRET_s *turret = GizTurret_FindByName(world->giz_turret_sys, "turret01");
+        if (turret != NULL)
+            turret->field_0x140 = 0.6f;
+        turret = GizTurret_FindByName(world->giz_turret_sys, "turret02");
+        if (turret != NULL)
+            turret->field_0x140 = 0.6f;
+        LevGizmo[0] = GizmoFindByName(world->gizmo_sys, gizaimessage_gizmotype_id, "msg_KaminoCProgress");
+        LevGizmo[1] = GizmoFindByName(world->gizmo_sys, obstacle_gizmotype_id, "JANGOFIELD01");
+    }
+    last = 0;
 }
 
-#if defined(__i386__)
-static const char kaminoc_next_tile_text[] asm("kaminoc_next_tile_text") __attribute__((used)) = "NextDiscoTile";
-static const char kaminoc_complete_text[] asm("kaminoc_complete_text") __attribute__((used)) = "DiscoComplete";
-
-__attribute__((naked)) void KaminoC_Reset(WORLDINFO_s *) {
-    __asm__ __volatile__(
-        "pushl %%ebp\n\t"
-        "xorl %%ebp, %%ebp\n\t"
-        "pushl %%edi\n\t"
-        "pushl %%esi\n\t"
-        "pushl %%ebx\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "leal -44(%%esp), %%esp\n\t"
-        "movl kaminoc_netpacket@GOT(%%ebx), %%eax\n\t"
-        "movl $0, kaminodisco@GOTOFF(%%ebx)\n\t"
-        "movl $0, kaminodisco+4@GOTOFF(%%ebx)\n\t"
-        "movl $0, kaminodisco+8@GOTOFF(%%ebx)\n\t"
-        "movl $0, kaminodisco+12@GOTOFF(%%ebx)\n\t"
-        "movb $0, kaminodisco+17@GOTOFF(%%ebx)\n\t"
-        "movb $-1, kaminodisco+18@GOTOFF(%%ebx)\n\t"
-        "movl (%%eax), %%eax\n\t"
-        "movb $-1, kaminodisco+19@GOTOFF(%%ebx)\n\t"
-        "movl $0, kaminodisco+20@GOTOFF(%%ebx)\n\t"
-        "movb $0, kaminodisco+24@GOTOFF(%%ebx)\n\t"
-        "movw $0, 2(%%eax)\n\t"
-        "movw $0, 6(%%eax)\n\t"
-        "movw $0, 4(%%eax)\n\t"
-        "movw $0, 8(%%eax)\n\t"
-        "movw $-1, (%%eax)\n\t"
-        "movb $0, 12(%%eax)\n\t"
-        "cmpb $0, kaminodisco+16@GOTOFF(%%ebx)\n\t"
-        "leal kaminodisco+16@GOTOFF, %%eax\n\t"
-        "leal kaminodisco_specials@GOTOFF(%%ebx), %%edi\n\t"
-        "movl %%eax, 28(%%esp)\n\t"
-        "jle 2f\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n\t"
-        ".byte 0x8d, 0xbc, 0x27, 0x00, 0x00, 0x00, 0x00\n"
-        "1:\n\t"
-        "leal (%%ebp,%%ebp,2), %%esi\n\t"
-        "movl $1, 4(%%esp)\n\t"
-        "addl $1, %%ebp\n\t"
-        "shll $2, %%esi\n\t"
-        "leal 4(%%edi,%%esi), %%edx\n\t"
-        "movl %%edx, (%%esp)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "leal 196(%%edi,%%esi), %%edx\n\t"
-        "movl $0, 4(%%esp)\n\t"
-        "movl %%edx, (%%esp)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "leal 580(%%edi,%%esi), %%edx\n\t"
-        "movl $0, 4(%%esp)\n\t"
-        "movl %%edx, (%%esp)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "movl 28(%%esp), %%eax\n\t"
-        "movsbl (%%eax,%%ebx), %%edx\n\t"
-        "cmpl %%ebp, %%edx\n\t"
-        "jg 1b\n"
-        "2:\n\t"
-        "movl $0, 8(%%esp)\n\t"
-        "movl gizaimessagesys@GOT(%%ebx), %%esi\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "leal kaminoc_next_tile_text@GOTOFF(%%ebx), %%eax\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl (%%esi), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z15SetGizAIMessageP17GIZAIMESSAGESYS_sPKcfP14GIZAIMESSAGE_s@PLT\n\t"
-        "movl $0, 8(%%esp)\n\t"
-        "movl %%eax, kaminodisco+28@GOTOFF(%%ebx)\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "leal kaminoc_complete_text@GOTOFF(%%ebx), %%eax\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl (%%esi), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z15SetGizAIMessageP17GIZAIMESSAGESYS_sPKcfP14GIZAIMESSAGE_s@PLT\n\t"
-        "movl disco_on_spin@GOT(%%ebx), %%edi\n\t"
-        "movl $0, 4(%%esp)\n\t"
-        "movl %%edi, (%%esp)\n\t"
-        "movl %%eax, kaminodisco+32@GOTOFF(%%ebx)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "movl netclient@GOT(%%ebx), %%esi\n\t"
-        "movl (%%esi), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 6f\n"
-        "3:\n\t"
-        "leal 12(%%edi), %%eax\n\t"
-        "movl $0, 4(%%esp)\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "movl (%%esi), %%eax\n\t"
-        "testl %%eax, %%eax\n\t"
-        "je 7f\n"
-        "4:\n\t"
-        "leal 24(%%edi), %%eax\n\t"
-        "movl $0, 4(%%esp)\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call NuSpecialSetVisibility@PLT\n\t"
-        "movl (%%esi), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 8f\n"
-        "5:\n\t"
-        "leal 44(%%esp), %%esp\n\t"
-        "popl %%ebx\n\t"
-        "popl %%esi\n\t"
-        "popl %%edi\n\t"
-        "popl %%ebp\n\t"
-        "ret\n\t"
-        "nop\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n"
-        "6:\n\t"
-        "movl disco_off_spina@GOT(%%ebx), %%ebp\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl (%%ebp), %%eax\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "movl (%%ebp), %%eax\n\t"
-        "movl (%%eax), %%edx\n\t"
-        "movl 40(%%edx), %%edx\n\t"
-        "movl 12(%%edx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "jne 3b\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "jmp 3b\n\t"
-        "leal 0(%%esi), %%esi\n"
-        "8:\n\t"
-        "movl disco_off_spina@GOT(%%ebx), %%esi\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl 8(%%esi), %%eax\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "movl 8(%%esi), %%eax\n\t"
-        "movl (%%eax), %%edx\n\t"
-        "movl 40(%%edx), %%edx\n\t"
-        "movl 12(%%edx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "jne 5b\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "jmp 5b\n\t"
-        "leal 0(%%esi), %%esi\n"
-        "7:\n\t"
-        "movl disco_off_spina@GOT(%%ebx), %%ebp\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl 4(%%ebp), %%eax\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z18GizmoSetVisibilityP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "movl 4(%%ebp), %%eax\n\t"
-        "movl (%%eax), %%edx\n\t"
-        "movl 40(%%edx), %%edx\n\t"
-        "movl 12(%%edx), %%ebp\n\t"
-        "testl %%ebp, %%ebp\n\t"
-        "jne 4b\n\t"
-        "movl 64(%%esp), %%edx\n\t"
-        "movl $0, 12(%%esp)\n\t"
-        "movl $1, 8(%%esp)\n\t"
-        "movl %%eax, 4(%%esp)\n\t"
-        "movl 10952(%%edx), %%eax\n\t"
-        "movl %%eax, (%%esp)\n\t"
-        "call _Z13GizmoActivateP10GIZMOSYS_sP7GIZMO_sii@PLT\n\t"
-        "jmp 4b"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
+void KaminoC_Reset(WORLDINFO_s *world) {
+    memset(kaminodisco.tiles, 0, sizeof(kaminodisco.tiles));
+    kaminodisco.state = 0;
+    kaminodisco.current_tile = -1;
+    kaminodisco.previous_tile = -1;
+    kaminodisco.timer = 0.0f;
+    kaminodisco.completion_sound_played = 0;
+    kaminoc_netpacket->flash = 0;
+    kaminoc_netpacket->finish = 0;
+    kaminoc_netpacket->select = 0;
+    kaminoc_netpacket->on = 0;
+    kaminoc_netpacket->off = -1;
+    kaminoc_netpacket->complete = 0;
+    for (i32 i = 0; i < kaminodisco.special_count; i++) {
+        NuSpecialSetVisibility(&kaminodisco.off[i], 1);
+        NuSpecialSetVisibility(&kaminodisco.flash[i], 0);
+        NuSpecialSetVisibility(&kaminodisco.finish[i], 0);
+    }
+    kaminodisco.next_tile_message = SetGizAIMessage(gizaimessagesys, "NextDiscoTile", 0.0f, NULL);
+    kaminodisco.complete_message = SetGizAIMessage(gizaimessagesys, "DiscoComplete", 0.0f, NULL);
+    for (i32 i = 0; i < 3; i++) {
+        NuSpecialSetVisibility(&disco_on_spin[i], 0);
+        if (netclient == 0) {
+            GIZMO_s *gizmo = static_cast<GIZMO_s *>(disco_off_spina[i]);
+            GizmoSetVisibility(world->gizmo_sys, gizmo, 1, 0);
+            gizmo = static_cast<GIZMO_s *>(disco_off_spina[i]);
+            if (static_cast<GIZFORCE_s *>(gizmo->object)->anim_set->state == GAMEANIMSET_STATE_AT_START)
+                GizmoActivate(world->gizmo_sys, gizmo, 1, 0);
+        }
+    }
 }
-#else
-void KaminoC_Reset(WORLDINFO_s *) {
-}
-#endif
 
-void KaminoC_Update(WORLDINFO_s *) {
+static i32 KaminoC_ChooseTile(i32 excluded, u8 state) {
+    i32 candidates[16];
+    i32 count = 0;
+    for (i32 i = 0; i < kaminodisco.special_count; i++) {
+        if (i != excluded && kaminodisco.tiles[i] == state)
+            candidates[count++] = i;
+    }
+    if (count == 0)
+        return -1;
+    return candidates[NuRand(0) % count];
+}
+
+static bool KaminoC_PlayerInArea(WORLDINFO_s *world) {
+    AISYS_s *ai = world->ai_sys;
+    if ((ai->player_1 == NULL && ai->player_2 == NULL) || kaminodisco.area == NULL)
+        return false;
+    i64 mask = 1 << (kaminodisco.area - ai->areas);
+    GameObject_s *object = reinterpret_cast<GameObject_s *>(ai->player_1);
+    return (object->ai_area_mask_low & static_cast<u32>(mask)) != 0 ||
+           (object->ai_area_mask_high & static_cast<u32>(mask >> 32)) != 0;
+}
+
+static bool KaminoC_CheckTile(i8 tile, i32 *player_tile) {
+    u8 previous = kaminodisco.tiles[tile];
+    kaminodisco.tiles[tile] = 1;
+    NUVEC *position = static_cast<NUVEC *>(NuSpecialGetPos(&kaminodisco.flash[tile]));
+    GameObject_s *object = NULL;
+    for (i32 i = 0; i < 8; i++) {
+        GameObject_s *candidate = Player[i];
+        if (candidate != NULL && (candidate->apiobj.field_0x1f8 & 0x1001) == 0x1001 &&
+            candidate->apiobj.field_0x27d != 0) {
+            f32 x = position->x - candidate->apiobj.position.x;
+            f32 y = position->y - candidate->apiobj.position.y;
+            f32 z = position->z - candidate->apiobj.position.z;
+            if (x * x + y * y + z * z < 0.2f * 0.2f) {
+                object = candidate;
+                break;
+            }
+        }
+    }
+    if (object != NULL) {
+        if (object == player)
+            *player_tile = tile;
+        kaminodisco.tiles[tile] = 2;
+    }
+    if (previous != kaminodisco.tiles[tile] && kaminodisco.tiles[tile] == 2)
+        kaminoc_netpacket->sounds |= 1 << tile;
+    return object != NULL;
+}
+
+void KaminoC_Update(WORLDINFO_s *world) {
+    const u8 *progress = static_cast<const u8 *>(LevGizmo[0]->object);
+    if (GizmoGetOutput(world->gizmo_sys, LevGizmo[0], 0, 0)) {
+        GizmoSetVisibility(world->gizmo_sys, LevGizmo[1], 0, 1);
+    } else if ((progress[0x98] & 1) == 0) {
+        GizmoActivate(world->gizmo_sys, LevGizmo[1], 1, 1);
+        if (GizmoGetOutput(world->gizmo_sys, gizTurrets[0], 0, 0) &&
+            GizmoGetOutput(world->gizmo_sys, gizTurrets[1], 0, 0))
+            GizmoSetVisibility(world->gizmo_sys, LevGizmo[1], 0, 1);
+    }
+    kaminoc_netpacket->sounds = 0;
+    SetGizAIMessage(gizaimessagesys, "NextDiscoTile", 0.0f, kaminodisco.next_tile_message);
+    SetGizAIMessage(gizaimessagesys, "DiscoComplete", 0.0f, kaminodisco.complete_message);
+    switch (kaminodisco.state) {
+    case 0:
+        if (KaminoC_PlayerInArea(world)) {
+            kaminoc_netpacket->complete = 0;
+            kaminodisco.state = 1;
+            kaminodisco.timer = 0.0f;
+            kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
+            kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
+            if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
+                kaminodisco.tiles[kaminodisco.current_tile] = 1;
+                kaminodisco.tiles[kaminodisco.previous_tile] = 1;
+            }
+        }
+        break;
+    case 1: {
+        i32 player_tile = -1;
+        bool first = KaminoC_CheckTile(kaminodisco.current_tile, &player_tile);
+        bool second = KaminoC_CheckTile(kaminodisco.previous_tile, &player_tile);
+        if (first && second) {
+            kaminodisco.timer = 0.0f;
+            kaminodisco.tiles[kaminodisco.current_tile] = 3;
+            kaminodisco.tiles[kaminodisco.previous_tile] = 3;
+            kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
+            kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
+            if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
+                kaminodisco.tiles[kaminodisco.current_tile] = 1;
+                kaminodisco.tiles[kaminodisco.previous_tile] = 1;
+            } else {
+                kaminodisco.state = 2;
+                for (i32 i = 0; i < kaminodisco.special_count; i++)
+                    kaminodisco.tiles[i] = 0;
+            }
+        } else {
+            kaminodisco.timer += FRAMETIME;
+            if (kaminodisco.timer > 2.5f) {
+                kaminodisco.timer = 0.0f;
+                for (i32 i = 0; i < 2; i++) {
+                    i32 tile = KaminoC_ChooseTile(-1, 3);
+                    if (tile != -1)
+                        kaminodisco.tiles[tile] = 0;
+                }
+            }
+            if (player2 == NULL) {
+                GameObject_s *companion = Player[0];
+                if (companion == player)
+                    companion = Player[1];
+                if (companion != NULL) {
+                    i32 next = -1;
+                    if (player_tile == kaminodisco.current_tile)
+                        next = kaminodisco.previous_tile;
+                    else if (player_tile == kaminodisco.previous_tile)
+                        next = kaminodisco.current_tile;
+                    if (next != -1)
+                        SetGizAIMessage(gizaimessagesys, "NextDiscoTile", static_cast<f32>(next + 1),
+                                        kaminodisco.next_tile_message);
+                }
+            }
+        }
+        break;
+    }
+    case 2:
+        SetGizAIMessage(gizaimessagesys, "DiscoComplete", 1.0f, kaminodisco.complete_message);
+        kaminoc_netpacket->complete = 1;
+        if (!KaminoC_PlayerInArea(world)) {
+            KaminoC_Reset(world);
+            return;
+        }
+        for (i32 i = 0; i < kaminodisco.special_count; i++)
+            kaminodisco.tiles[i] = 4;
+        kaminodisco.timer += FRAMETIME;
+        if (kaminodisco.timer > 20.0f) {
+            KaminoC_Reset(world);
+            return;
+        }
+        break;
+    }
+    kaminoc_netpacket->on = 0;
+    kaminoc_netpacket->off = 0;
+    kaminoc_netpacket->flash = 0;
+    kaminoc_netpacket->select = 0;
+    kaminoc_netpacket->finish = 0;
+    for (i32 i = 0; i < kaminodisco.special_count; i++) {
+        switch (kaminodisco.tiles[i]) {
+        case 0: kaminoc_netpacket->off |= 1 << i; break;
+        case 1: kaminoc_netpacket->flash |= 1 << i; break;
+        case 2: kaminoc_netpacket->select |= 1 << i; break;
+        case 3: kaminoc_netpacket->on |= 1 << i; break;
+        case 4: kaminoc_netpacket->finish |= 1 << i; break;
+        }
+    }
+    for (i32 i = 0; i < kaminodisco.special_count; i++) {
+        NuSpecialSetVisibility(&kaminodisco.off[i], kaminoc_netpacket->off & (1 << i));
+        NuSpecialSetVisibility(&kaminodisco.flash[i], kaminoc_netpacket->flash & (1 << i));
+        NuSpecialSetVisibility(&kaminodisco.select[i], kaminoc_netpacket->select & (1 << i));
+        NuSpecialSetVisibility(&kaminodisco.on[i], kaminoc_netpacket->on & (1 << i));
+        NuSpecialSetVisibility(&kaminodisco.finish[i], kaminoc_netpacket->finish & (1 << i));
+        if ((kaminoc_netpacket->sounds & (1 << i)) != 0) {
+            NUMTX *matrix = static_cast<NUMTX *>(NuSpecialGetDrawMtx(&kaminodisco.finish[i]));
+            PlaySfx("Kam_DiscoFloorPanelOn", reinterpret_cast<NUVEC *>(&matrix->m30));
+        }
+    }
+    if (kaminoc_netpacket->complete == 0) {
+        for (i32 i = 0; i < 3; i++) {
+            NuSpecialSetVisibility(&disco_on_spin[i], 0);
+            GizmoSetVisibility(world->gizmo_sys, static_cast<GIZMO_s *>(disco_off_spina[i]), 1, 0);
+        }
+        NuSpecialSetVisibility(&walllights_disco[0], 0);
+        NuSpecialSetVisibility(&walllights_disco[1], 0);
+        NuSpecialSetVisibility(&walllights[0], 1);
+        NuSpecialSetVisibility(&walllights[1], 1);
+        NuSpecialSetVisibility(&striplights[0], 1);
+        NuSpecialSetVisibility(&striplights[1], 0);
+        NuSpecialSetVisibility(&discolights[0], 0);
+        NuSpecialSetVisibility(&discolights[1], 0);
+        NuSpecialSetVisibility(&discorm_wall_on, 0);
+        NuSpecialSetVisibility(&discorm_wall_off, 1);
+    } else {
+        for (i32 i = 0; i < 3; i++) {
+            NuSpecialSetVisibility(&disco_on_spin[i], 1);
+            GizmoSetVisibility(world->gizmo_sys, static_cast<GIZMO_s *>(disco_off_spina[i]), 0, 0);
+        }
+        NuSpecialSetVisibility(&walllights_disco[0], 1);
+        NuSpecialSetVisibility(&walllights_disco[1], 1);
+        NuSpecialSetVisibility(&walllights[0], 0);
+        NuSpecialSetVisibility(&walllights[1], 0);
+        NuSpecialSetVisibility(&striplights[0], 0);
+        NuSpecialSetVisibility(&striplights[1], 1);
+        NuSpecialSetVisibility(&discolights[0], 1);
+        NuSpecialSetVisibility(&discolights[1], 1);
+        NuSpecialSetVisibility(&discorm_wall_off, 0);
+        NuSpecialSetVisibility(&discorm_wall_on, 1);
+        if (kaminodisco.completion_sound_played == 0) {
+            PlaySfx("Kam_DiscoFloorPanelDone", NuSpecialGetDrawPos(&kaminodisco.off[3]));
+            kaminodisco.completion_sound_played = 1;
+        }
+    }
 }
 
 void KaminoD_Init(WORLDINFO_s *world) {
@@ -965,7 +713,34 @@ void KaminoE_Init(WORLDINFO_s *world) {
         LevForce = *(i32 *)g;
 }
 
-void KaminoE_Reset(WORLDINFO_s *) {
+void KaminoE_Reset(WORLDINFO_s *world) {
+    memset(&kamino_e, 0, sizeof(kamino_e));
+    kamino_e.landing_pad = AISysFindArea(WORLD->ai_sys, "landing_pad");
+    if (NuSpecialFind(world->current_gscn, &kamino_e.special, "slave1", 1))
+        kamino_e.bolt_filter = FindPlatInst(NuSpecialGetInstanceix(&kamino_e.special));
+    char name[16];
+    for (i32 i = 0; i < 4; i++) {
+        sprintf(name, "turret%d", i + 1);
+        GIZMO_s *gizmo = GizmoFindByName(world->gizmo_sys, turret_gizmotype_id, name);
+        if (gizmo != NULL) {
+            GIZTURRET_s *turret = static_cast<GIZTURRET_s *>(gizmo->object);
+            kamino_e.turrets[i] = turret;
+            turret->target_position = &kamino_e.position;
+            turret->field_0x12c = 2;
+            turret->flags |= 1;
+        }
+        sprintf(name, "R4_t%d", i + 1);
+        gizmo = GizmoFindByName(world->gizmo_sys, gizpanel_gizmotype_id, name);
+        if (gizmo != NULL)
+            kamino_e.panels[i] = static_cast<GIZPANEL_s *>(gizmo->object);
+    }
+    kamino_e.fight = SetGizAIMessage(gizaimessagesys, "JangoFight", 0.0f, NULL);
+    kamino_e.can_fire = SetGizAIMessage(gizaimessagesys, "Slave1CanFire", 0.0f, NULL);
+    kamino_e.reset_turrets = SetGizAIMessage(gizaimessagesys, "ResetTurrets", 0.0f, NULL);
+    kamino_e.show_hearts = CheckGizAIMessage(gizaimessagesys, "ShowHearts", NULL);
+    kamino_e.mini_cut_started = CheckGizAIMessage(gizaimessagesys, "MiniCutStarted", NULL);
+    CutScene_Find(world->cutscene_sys, "Ep2_Kamino_Intro2");
+    kamino_e.intro = CutScene_Find(world->cutscene_sys, "Ep2_Kamino_Intro2");
 }
 
 void KaminoE_Update(WORLDINFO_s *) {
@@ -980,9 +755,9 @@ void KaminoE_AlwaysUpdate(WORLDINFO_s *) {
 
 void KaminoE_Draw(WORLDINFO_s *world) {
     if (netclient == 0) {
-        if (kamino_e.state->field_0x28 > 0.0f) {
+        if (kamino_e.show_hearts->value > 0.0f) {
             GameObject_s *obj = (GameObject_s *)FindGameObject((i32)(i16)id_JANGOFETT, 1, 1, 1, 0);
-            if (obj != NULL && kamino_e.state != NULL && kamino_e.state->field_0x28 == 1.0f)
+            if (obj != NULL && kamino_e.show_hearts != NULL && kamino_e.show_hearts->value == 1.0f)
                 DrawBossHitPoints(obj);
         }
     }
@@ -990,110 +765,17 @@ void KaminoE_Draw(WORLDINFO_s *world) {
     NuSpecialSetVisibility(&kamino_e.special, 1);
 }
 
-#if defined(__i386__)
-__attribute__((naked)) void KaminoE_CheckPlatHit(BOLT_s *) {
-    __asm__ __volatile__(
-        "pushl %%ebx\n\t"
-        "call __x86.get_pc_thunk.bx\n\t"
-        "addl $_GLOBAL_OFFSET_TABLE_, %%ebx\n\t"
-        "movl 8(%%esp), %%edx\n\t"
-        "xorl %%eax, %%eax\n\t"
-        "movzwl kamino_e+118@GOTOFF(%%ebx), %%ecx\n\t"
-        "cmpw %%cx, 250(%%edx)\n\t"
-        "je 1f\n\t"
-        "popl %%ebx\n\t"
-        "ret\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n"
-        "1:\n\t"
-        "movl kamino_e+40@GOTOFF(%%ebx), %%edx\n\t"
-        "movl kamino_e+56@GOTOFF(%%ebx), %%eax\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 2f\n\t"
-        "movl kamino_e+60@GOTOFF(%%ebx), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 2f\n\t"
-        "movzbl 314(%%edx), %%ecx\n\t"
-        "andl $50, %%ecx\n\t"
-        "cmpb $2, %%cl\n\t"
-        "je 6f\n"
-        "2:\n\t"
-        "movl kamino_e+44@GOTOFF(%%ebx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 3f\n\t"
-        "movl kamino_e+64@GOTOFF(%%ebx), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 3f\n\t"
-        "movzbl 314(%%edx), %%ecx\n\t"
-        "andl $50, %%ecx\n\t"
-        "cmpb $2, %%cl\n\t"
-        "je 7f\n"
-        "3:\n\t"
-        "movl kamino_e+48@GOTOFF(%%ebx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 4f\n\t"
-        "movl kamino_e+68@GOTOFF(%%ebx), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 4f\n\t"
-        "movzbl 314(%%edx), %%ecx\n\t"
-        "andl $50, %%ecx\n\t"
-        "cmpb $2, %%cl\n\t"
-        "je 8f\n"
-        "4:\n\t"
-        "movl kamino_e+52@GOTOFF(%%ebx), %%edx\n\t"
-        "testl %%edx, %%edx\n\t"
-        "je 5f\n\t"
-        "movl kamino_e+72@GOTOFF(%%ebx), %%ecx\n\t"
-        "testl %%ecx, %%ecx\n\t"
-        "je 5f\n\t"
-        "movzbl 314(%%edx), %%ecx\n\t"
-        "andl $50, %%ecx\n\t"
-        "cmpb $2, %%cl\n\t"
-        "je 9f\n"
-        "5:\n\t"
-        "movl %%eax, kamino_e+56@GOTOFF(%%ebx)\n\t"
-        "movl $1, %%eax\n\t"
-        "popl %%ebx\n\t"
-        "ret\n\t"
-        "nop\n\t"
-        ".byte 0x8d, 0x74, 0x26, 0x00\n"
-        "9:\n\t"
-        "testl %%eax, %%eax\n\t"
-        "cmovel %%edx, %%eax\n\t"
-        "jmp 5b\n\t"
-        "nop\n"
-        "8:\n\t"
-        "testl %%eax, %%eax\n\t"
-        "cmovel %%edx, %%eax\n\t"
-        "jmp 4b\n\t"
-        "nop\n"
-        "7:\n\t"
-        "testl %%eax, %%eax\n\t"
-        "cmovel %%edx, %%eax\n\t"
-        "jmp 3b\n\t"
-        "nop\n"
-        "6:\n\t"
-        "testl %%eax, %%eax\n\t"
-        "cmovel %%edx, %%eax\n\t"
-        "jmp 2b"
-        :
-        :
-        : "memory");
-    __builtin_unreachable();
-}
-#else
-void KaminoE_CheckPlatHit(BOLT_s *bolt) {
-    if (*reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(bolt) + 0xfa) != kamino_e.bolt_filter)
-        return;
-    GameObject_s *hit = kamino_e.hit_platform;
+i32 KaminoE_CheckPlatHit(BOLT_s *bolt) {
+    if (bolt->hit_platform_id != kamino_e.bolt_filter)
+        return 0;
     for (i32 i = 0; i < 4; i++) {
-        GameObject_s *platform = kamino_e.platforms[i];
-        if (platform != NULL && kamino_e.platform_enabled[i] != NULL &&
-            (reinterpret_cast<u8 *>(platform)[0x13a] & 0x32) == 2 && hit == NULL)
-            hit = platform;
+        GIZTURRET_s *turret = kamino_e.turrets[i];
+        if (turret != NULL && kamino_e.panels[i] != NULL &&
+            (turret->flags & 0x32) == 2 && kamino_e.hit_turret == NULL)
+            kamino_e.hit_turret = turret;
     }
-    kamino_e.hit_platform = hit;
+    return 1;
 }
-#endif
 
 void KaminoF_Init(WORLDINFO_s *world) {
     GIZMOBLOWUP_s *b;
@@ -1243,7 +925,7 @@ void FactoryG_Init(WORLDINFO_s *world) {
 }
 
 void FactoryG_Update(WORLDINFO_s *world) {
-    if (*(volatile i32 *)&netclient != 0)
+    if (netclient != 0)
         return;
     i32 complete = 0;
     for (i32 i = 0; i < 4; i++) {
@@ -1359,8 +1041,8 @@ void BonusGunshipA_Update(WORLDINFO_s *world) {
     if (LevFlag.progress == GUNSHIP_INACTIVE) {
         if ((Player[0] != NULL && Player[0]->field_0x661 == 0 && Player[0]->field_0x68c > 12.1f) ||
             (Player[1] != NULL && Player[1]->field_0x661 == 0 && Player[1]->field_0x68c > 12.1f)) {
-            register i32 client asm("edi") = netclient;
-            __asm__ __volatile__("" : "+D"(client));
+            i32 client = netclient;
+
             if (client == 0) {
                 Doors_SetLastDoor((DOOR_s *)Door_FindByName(world, "gunshipa_mid"));
                 bonus_gunship_store_progress_flag = 1;
@@ -1393,7 +1075,7 @@ void BonusGunshipB_Reset(WORLDINFO_s *) {
 }
 
 void BonusGunshipB_Update(WORLDINFO_s *world) {
-    if (*(volatile i32 *)&netclient == 0) {
+    if (netclient == 0) {
         if (gunship_player_dead == 0) {
             if ((Player[0] != NULL && Player[0]->apiobj.field_0x287 != 0) ||
                 (Player[1] != NULL && Player[1]->apiobj.field_0x287 != 0)) {
@@ -1401,8 +1083,8 @@ void BonusGunshipB_Update(WORLDINFO_s *world) {
                 ResetLevel(world, "ep2_bonus_gunshipcavalry_explode", 1);
             }
         }
-        register u8 progress asm("eax") = LevFlag.progress;
-        __asm__ __volatile__("" : "+a"(progress));
+        u8 progress = LevFlag.progress;
+
         if (progress == GUNSHIP_INACTIVE) {
             // The cavalry is held back three seconds longer per death so far,
             // capped at half a minute.
@@ -1488,8 +1170,8 @@ void DookuC_Reset(WORLDINFO_s *world) {
     dooku_c.node.scene = NULL;
     dooku_c.node.special = NULL;
     dooku_c.node.display_special = NULL;
-    register i32 client asm("esi") = netclient;
-    __asm__ __volatile__("" : "+S"(client));
+    i32 client = netclient;
+
     if (client == 0) {
         dooku_c.total = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
         dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);

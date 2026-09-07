@@ -462,8 +462,16 @@ struct BOLT_s {
     u8 pad_0xb8[0xcc - 0xb8];
     f32 speed;
     u8 pad_0xd0[0xf0 - 0xd0];
-    u8 flags; // 0xf0
-    u8 pad_0xf1[0x100 - 0xf1];
+    union {
+        u32 flags_word; // 0xf0
+        struct {
+            u8 flags;
+            u8 pad_0xf1[3];
+        };
+    };
+    u8 pad_0xf4[6];
+    u16 hit_platform_id; // 0xfa
+    u8 pad_0xfc[4];
     u8 active;  // 0x100
     u8 type_id; // 0x101
     u8 pad_0x102[0x138 - 0x102];
@@ -3313,7 +3321,13 @@ struct GIZTURRET_s {
     i32 field_0x70;
     NUVEC field_0x74[4];
     NUMTX field_0xa4;
-    u8 field_0xe4[0xec - 0xe4];
+    union {
+        u8 field_0xe4[0xec - 0xe4];
+        struct {
+            NUVEC *target_position;
+            u32 field_0xe8;
+        };
+    };
     f32 field_0xec;
     f32 field_0xf0;
     f32 reflection_alpha; // 0xf4
