@@ -922,8 +922,8 @@ void KaminoE_Update(WORLDINFO_s *world) {
         }
         case 5: {
             NUVEC aim;
-            i32 pitch_target = 0xb60;
             i32 yaw_target = 0xc000;
+            i32 pitch_target = 0xb60;
             bool aiming = false;
             if (kamino_e.hit_turret != NULL) {
                 aim = *NuSpecialGetDrawPos(&kamino_e.hit_turret->primary_anim_obj->special);
