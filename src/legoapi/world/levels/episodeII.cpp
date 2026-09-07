@@ -884,22 +884,22 @@ void KaminoE_Update(WORLDINFO_s *world) {
         }
         case 2:
             kamino_e.timer += FRAMETIME;
-            if (kamino_e.timer >= 4.0f) {
+            if (4.0f > kamino_e.timer) {
+                kamino_e.pitch = SeekRot(kamino_e.pitch, 0, kamino_e.timer);
+            } else {
                 kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
                 kamino_e.state = 3;
                 kamino_e.timer = 0.0f;
-            } else {
-                kamino_e.pitch = SeekRot(kamino_e.pitch, 0, kamino_e.timer);
             }
             break;
         case 3:
             kamino_e.timer += FRAMETIME;
-            if (kamino_e.timer >= 4.0f) {
+            if (4.0f > kamino_e.timer) {
+                kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, kamino_e.timer);
+            } else {
                 kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
                 kamino_e.timer = 0.0f;
                 kamino_e.state = 4;
-            } else {
-                kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, kamino_e.timer);
             }
             kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
             break;
