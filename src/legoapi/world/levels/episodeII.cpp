@@ -796,12 +796,22 @@ void KaminoE_Reset(WORLDINFO_s *world) {
 void KaminoE_Update(WORLDINFO_s *world) {
     if (kamino_e.reset_turrets != NULL && kamino_e.reset_turrets->value == 1.0f) {
         kamino_e.hit_turret = NULL;
-        for (i32 i = 0; i < 4; i++) {
-            GizmoActivate(WORLD->gizmo_sys,
-                          GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[i]), 1, 1);
-            kamino_e.turrets[i]->flags &= ~0x10;
-            kamino_e.turrets[i]->field_0x12e = 1;
-        }
+        GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[0]), 1,
+                      1);
+        kamino_e.turrets[0]->flags &= ~0x10;
+        kamino_e.turrets[0]->field_0x12e = 1;
+        GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[1]), 1,
+                      1);
+        kamino_e.turrets[1]->flags &= ~0x10;
+        kamino_e.turrets[1]->field_0x12e = 1;
+        GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[2]), 1,
+                      1);
+        kamino_e.turrets[2]->flags &= ~0x10;
+        kamino_e.turrets[2]->field_0x12e = 1;
+        GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[3]), 1,
+                      1);
+        kamino_e.turrets[3]->flags &= ~0x10;
+        kamino_e.turrets[3]->field_0x12e = 1;
         kamino_e.reset_turrets->value = 0.0f;
     }
     if (netclient != 0)
