@@ -507,11 +507,11 @@ static bool KaminoC_PlayerInArea(WORLDINFO_s *world) {
         return false;
     i64 mask = 1 << (kaminodisco.area - ai->areas);
     GameObject_s *object = reinterpret_cast<GameObject_s *>(ai->player_1);
-    return (object->ai_area_mask_low & static_cast<u32>(mask)) != 0 ||
-           (object->ai_area_mask_high & static_cast<u32>(mask >> 32)) != 0;
+    return ((object->ai_area_mask_low & static_cast<u32>(mask)) |
+            (object->ai_area_mask_high & static_cast<u32>(mask >> 32))) != 0;
 }
 
-static bool KaminoC_CheckTile(i8 tile, i32 *player_tile) {
+static inline bool KaminoC_CheckTile(i8 tile, i32 *player_tile) {
     u8 previous = kaminodisco.tiles[tile];
     kaminodisco.tiles[tile] = 1;
     NUVEC *position = static_cast<NUVEC *>(NuSpecialGetPos(&kaminodisco.flash[tile]));
