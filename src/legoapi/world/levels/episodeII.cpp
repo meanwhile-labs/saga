@@ -1682,30 +1682,6 @@ void JediB_Update(WORLDINFO_s *world) {
                 jedi_b.stage = stage;
                 if (stage == 6) {
                     jedi_b.stage = 7;
-                } else if (stage >= 1 && stage <= 3) {
-                    // Place this phase's wave on the "phase<n>_<m>" locators.
-                    for (JEDIB_PHASE_s *entry = phases[stage - 1]; entry->id != NULL; entry++) {
-                        if (jedi_b.active_count > 7)
-                            break;
-                        if (g_lowEndLevelBehaviour != 0 && jedi_b.active_count == 5)
-                            break;
-                        char name[0x10];
-                        sprintf(name, "phase%d_%d", jedi_b.stage, jedi_b.active_count + 1);
-                        AILOCATOR_s *locator = AIPathFindLocator(world->ai_sys, name);
-                        if (locator == NULL)
-                            continue;
-                        JEDIB_SPAWN_s *slot = &jedi_b.active[jedi_b.active_count];
-                        slot->locator = *locator;
-                        slot->object = AddDynamicCreature(*entry->id, &locator->position, locator->flags, entry->script,
-                                                          &locator->path_info, NULL, 1, NULL, NULL, 0, 0);
-                        if (slot->object == NULL)
-                            continue;
-                        slot->field_0x10 = *entry->id;
-                        slot->object->field_0xefb |= 1;
-                        slot->object->ai.locator = locator;
-                        slot->object->field_0xeb4 = reinterpret_cast<u32>(JediBKilledCallback);
-                        jedi_b.active_count = jedi_b.active_count + 1;
-                    }
                 } else if (stage >= 4 && stage <= 6) {
                     // Mark a fresh set of arena slots as this phase's targets.
                     for (i32 i = 0; i < jedi_b.spawn_count; i++)
@@ -1741,6 +1717,30 @@ void JediB_Update(WORLDINFO_s *world) {
                         }
                     }
                     jedi_b.objective_timer = 0.0f;
+                } else if (stage >= 1 && stage <= 3) {
+                    // Place this phase's wave on the "phase<n>_<m>" locators.
+                    for (JEDIB_PHASE_s *entry = phases[stage - 1]; entry->id != NULL; entry++) {
+                        if (jedi_b.active_count > 7)
+                            break;
+                        if (g_lowEndLevelBehaviour != 0 && jedi_b.active_count == 5)
+                            break;
+                        char name[0x10];
+                        sprintf(name, "phase%d_%d", jedi_b.stage, jedi_b.active_count + 1);
+                        AILOCATOR_s *locator = AIPathFindLocator(world->ai_sys, name);
+                        if (locator == NULL)
+                            continue;
+                        JEDIB_SPAWN_s *slot = &jedi_b.active[jedi_b.active_count];
+                        slot->locator = *locator;
+                        slot->object = AddDynamicCreature(*entry->id, &locator->position, locator->flags, entry->script,
+                                                          &locator->path_info, NULL, 1, NULL, NULL, 0, 0);
+                        if (slot->object == NULL)
+                            continue;
+                        slot->field_0x10 = *entry->id;
+                        slot->object->field_0xefb |= 1;
+                        slot->object->ai.locator = locator;
+                        slot->object->field_0xeb4 = reinterpret_cast<u32>(JediBKilledCallback);
+                        jedi_b.active_count = jedi_b.active_count + 1;
+                    }
                 }
                 if (jedi_b.phase_message == NULL)
                     jedi_b.phase_message = CheckGizAIMessage(gizaimessagesys, "Phase", NULL);
