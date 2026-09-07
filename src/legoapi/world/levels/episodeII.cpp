@@ -593,80 +593,80 @@ void KaminoC_Update(WORLDINFO_s *world) {
     SetGizAIMessage(gizaimessagesys, "NextDiscoTile", 0.0f, kaminodisco.next_tile_message);
     SetGizAIMessage(gizaimessagesys, "DiscoComplete", 0.0f, kaminodisco.complete_message);
     switch (kaminodisco.state) {
-    case 0:
-        if (KaminoC_PlayerInArea(world)) {
-            kaminoc_netpacket->complete = 0;
-            kaminodisco.state = 1;
-            kaminodisco.timer = 0.0f;
-            kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
-            kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
-            if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
-                kaminodisco.tiles[kaminodisco.current_tile] = 1;
-                kaminodisco.tiles[kaminodisco.previous_tile] = 1;
-            }
-        }
-        break;
-    case 1: {
-        i32 player_tile = -1;
-        bool first = KaminoC_CheckTile(kaminodisco.current_tile, &player_tile);
-        bool second = KaminoC_CheckTile(kaminodisco.previous_tile, &player_tile);
-        if (first && second) {
-            kaminodisco.timer = 0.0f;
-            kaminodisco.tiles[kaminodisco.current_tile] = 3;
-            kaminodisco.tiles[kaminodisco.previous_tile] = 3;
-            kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
-            kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
-            if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
-                kaminodisco.tiles[kaminodisco.current_tile] = 1;
-                kaminodisco.tiles[kaminodisco.previous_tile] = 1;
-            } else {
-                kaminodisco.state = 2;
-                for (i32 i = 0; i < kaminodisco.special_count; i++)
-                    kaminodisco.tiles[i] = 0;
-            }
-        } else {
-            kaminodisco.timer += FRAMETIME;
-            if (kaminodisco.timer > 2.5f) {
+        case 0:
+            if (KaminoC_PlayerInArea(world)) {
+                kaminoc_netpacket->complete = 0;
+                kaminodisco.state = 1;
                 kaminodisco.timer = 0.0f;
-                for (i32 i = 0; i < 2; i++) {
-                    i32 tile = KaminoC_ChooseTile(-1, 3);
-                    if (tile != -1)
-                        kaminodisco.tiles[tile] = 0;
+                kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
+                kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
+                if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
+                    kaminodisco.tiles[kaminodisco.current_tile] = 1;
+                    kaminodisco.tiles[kaminodisco.previous_tile] = 1;
                 }
             }
-            if (player2 == NULL) {
-                GameObject_s *companion = Player[0];
-                if (companion == player)
-                    companion = Player[1];
-                if (companion != NULL) {
-                    i32 next = -1;
-                    if (player_tile == kaminodisco.current_tile)
-                        next = kaminodisco.previous_tile;
-                    else if (player_tile == kaminodisco.previous_tile)
-                        next = kaminodisco.current_tile;
-                    if (next != -1)
-                        SetGizAIMessage(gizaimessagesys, "NextDiscoTile", static_cast<f32>(next + 1),
-                                        kaminodisco.next_tile_message);
+            break;
+        case 1: {
+            i32 player_tile = -1;
+            bool first = KaminoC_CheckTile(kaminodisco.current_tile, &player_tile);
+            bool second = KaminoC_CheckTile(kaminodisco.previous_tile, &player_tile);
+            if (first && second) {
+                kaminodisco.timer = 0.0f;
+                kaminodisco.tiles[kaminodisco.current_tile] = 3;
+                kaminodisco.tiles[kaminodisco.previous_tile] = 3;
+                kaminodisco.current_tile = KaminoC_ChooseTile(-1, 0);
+                kaminodisco.previous_tile = KaminoC_ChooseTile(kaminodisco.current_tile, 0);
+                if (kaminodisco.current_tile != -1 && kaminodisco.previous_tile != -1) {
+                    kaminodisco.tiles[kaminodisco.current_tile] = 1;
+                    kaminodisco.tiles[kaminodisco.previous_tile] = 1;
+                } else {
+                    kaminodisco.state = 2;
+                    for (i32 i = 0; i < kaminodisco.special_count; i++)
+                        kaminodisco.tiles[i] = 0;
+                }
+            } else {
+                kaminodisco.timer += FRAMETIME;
+                if (kaminodisco.timer > 2.5f) {
+                    kaminodisco.timer = 0.0f;
+                    for (i32 i = 0; i < 2; i++) {
+                        i32 tile = KaminoC_ChooseTile(-1, 3);
+                        if (tile != -1)
+                            kaminodisco.tiles[tile] = 0;
+                    }
+                }
+                if (player2 == NULL) {
+                    GameObject_s *companion = Player[0];
+                    if (companion == player)
+                        companion = Player[1];
+                    if (companion != NULL) {
+                        i32 next = -1;
+                        if (player_tile == kaminodisco.current_tile)
+                            next = kaminodisco.previous_tile;
+                        else if (player_tile == kaminodisco.previous_tile)
+                            next = kaminodisco.current_tile;
+                        if (next != -1)
+                            SetGizAIMessage(gizaimessagesys, "NextDiscoTile", static_cast<f32>(next + 1),
+                                            kaminodisco.next_tile_message);
+                    }
                 }
             }
+            break;
         }
-        break;
-    }
-    case 2:
-        SetGizAIMessage(gizaimessagesys, "DiscoComplete", 1.0f, kaminodisco.complete_message);
-        kaminoc_netpacket->complete = 1;
-        if (!KaminoC_PlayerInArea(world)) {
-            KaminoC_Reset(world);
-            return;
-        }
-        for (i32 i = 0; i < kaminodisco.special_count; i++)
-            kaminodisco.tiles[i] = 4;
-        kaminodisco.timer += FRAMETIME;
-        if (kaminodisco.timer > 20.0f) {
-            KaminoC_Reset(world);
-            return;
-        }
-        break;
+        case 2:
+            SetGizAIMessage(gizaimessagesys, "DiscoComplete", 1.0f, kaminodisco.complete_message);
+            kaminoc_netpacket->complete = 1;
+            if (!KaminoC_PlayerInArea(world)) {
+                KaminoC_Reset(world);
+                return;
+            }
+            for (i32 i = 0; i < kaminodisco.special_count; i++)
+                kaminodisco.tiles[i] = 4;
+            kaminodisco.timer += FRAMETIME;
+            if (kaminodisco.timer > 20.0f) {
+                KaminoC_Reset(world);
+                return;
+            }
+            break;
     }
     kaminoc_netpacket->on = 0;
     kaminoc_netpacket->off = 0;
@@ -675,11 +675,21 @@ void KaminoC_Update(WORLDINFO_s *world) {
     kaminoc_netpacket->finish = 0;
     for (i32 i = 0; i < kaminodisco.special_count; i++) {
         switch (kaminodisco.tiles[i]) {
-        case 0: kaminoc_netpacket->off |= 1 << i; break;
-        case 1: kaminoc_netpacket->flash |= 1 << i; break;
-        case 2: kaminoc_netpacket->select |= 1 << i; break;
-        case 3: kaminoc_netpacket->on |= 1 << i; break;
-        case 4: kaminoc_netpacket->finish |= 1 << i; break;
+            case 0:
+                kaminoc_netpacket->off |= 1 << i;
+                break;
+            case 1:
+                kaminoc_netpacket->flash |= 1 << i;
+                break;
+            case 2:
+                kaminoc_netpacket->select |= 1 << i;
+                break;
+            case 3:
+                kaminoc_netpacket->on |= 1 << i;
+                break;
+            case 4:
+                kaminoc_netpacket->finish |= 1 << i;
+                break;
         }
     }
     for (i32 i = 0; i < kaminodisco.special_count; i++) {
@@ -787,8 +797,8 @@ void KaminoE_Update(WORLDINFO_s *world) {
     if (kamino_e.reset_turrets != NULL && kamino_e.reset_turrets->value == 1.0f) {
         kamino_e.hit_turret = NULL;
         for (i32 i = 0; i < 4; i++) {
-            GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[i]),
-                          1, 1);
+            GizmoActivate(WORLD->gizmo_sys,
+                          GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[i]), 1, 1);
             kamino_e.turrets[i]->flags &= ~0x10;
             kamino_e.turrets[i]->field_0x12e = 1;
         }
@@ -831,167 +841,166 @@ void KaminoE_Update(WORLDINFO_s *world) {
     if (kamino_e.state != 0)
         PlaySfx("Slave1_EngineLp", &kamino_e.position);
     switch (kamino_e.state) {
-    case 0:
-        if (kamino_e.fight->value > 0.0f) {
-            kamino_e.state = 1;
-            kamino_e.timer = 0.0f;
-            GizObstacle_FindByName(world->giz_obstacle_sys, "slave1_debris");
+        case 0:
+            if (kamino_e.fight->value > 0.0f) {
+                kamino_e.state = 1;
+                kamino_e.timer = 0.0f;
+                GizObstacle_FindByName(world->giz_obstacle_sys, "slave1_debris");
+            }
+            kamino_e.position.y = -2.8f;
+            kamino_e.position.x = kamino_e_centre.x;
+            kamino_e.position.z = kamino_e_centre.z;
+            kamino_e.pitch = -0x4000;
+            kamino_e.yaw = 0;
+            kamino_e.orbit_pitch = -0xe38;
+            kamino_e.orbit_yaw = 0x4000;
+            break;
+        case 1: {
+            // Rise out of the pad over four seconds.
+            kamino_e.timer += FRAMETIME;
+            f32 blend;
+            if (kamino_e.timer >= 4.0f) {
+                kamino_e.timer = 0.0f;
+                kamino_e.state = 2;
+                blend = 1.0f;
+            } else {
+                blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
+            }
+            kamino_e.position.y = blend * hover.y + (1.0f - blend) * -2.8f;
+            break;
         }
-        kamino_e.position.y = -2.8f;
-        kamino_e.position.x = kamino_e_centre.x;
-        kamino_e.position.z = kamino_e_centre.z;
-        kamino_e.pitch = -0x4000;
-        kamino_e.yaw = 0;
-        kamino_e.orbit_pitch = -0xe38;
-        kamino_e.orbit_yaw = 0x4000;
-        break;
-    case 1: {
-        // Rise out of the pad over four seconds.
-        kamino_e.timer += FRAMETIME;
-        f32 blend;
-        if (kamino_e.timer >= 4.0f) {
-            kamino_e.timer = 0.0f;
-            kamino_e.state = 2;
-            blend = 1.0f;
-        } else {
-            blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
-        }
-        kamino_e.position.y = blend * hover.y + (1.0f - blend) * -2.8f;
-        break;
-    }
-    case 2:
-        kamino_e.timer += FRAMETIME;
-        if (kamino_e.timer >= 4.0f) {
+        case 2:
+            kamino_e.timer += FRAMETIME;
+            if (kamino_e.timer >= 4.0f) {
+                kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
+                kamino_e.state = 3;
+                kamino_e.timer = 0.0f;
+            } else {
+                kamino_e.pitch = SeekRot(kamino_e.pitch, 0, kamino_e.timer);
+            }
+            break;
+        case 3:
+            kamino_e.timer += FRAMETIME;
+            if (kamino_e.timer >= 4.0f) {
+                kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
+                kamino_e.timer = 0.0f;
+                kamino_e.state = 4;
+            } else {
+                kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, kamino_e.timer);
+            }
             kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
-            kamino_e.state = 3;
-            kamino_e.timer = 0.0f;
-        } else {
-            kamino_e.pitch = SeekRot(kamino_e.pitch, 0, kamino_e.timer);
-        }
-        break;
-    case 3:
-        kamino_e.timer += FRAMETIME;
-        if (kamino_e.timer >= 4.0f) {
+            break;
+        case 4: {
+            // Slide out to the orbit radius.
+            kamino_e.timer += FRAMETIME;
+            f32 blend;
+            if (kamino_e.timer >= 4.0f) {
+                kamino_e.timer = 0.0f;
+                kamino_e.state = 5;
+                blend = 1.0f;
+            } else {
+                blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
+            }
+            kamino_e.position.x = hover.x * blend + kamino_e_centre.x * (1.0f - blend);
+            kamino_e.position.z = blend * hover.z + (1.0f - blend) * kamino_e_centre.z;
+            kamino_e.pitch = SeekRot(kamino_e.pitch, 0xb60, 4.0f);
             kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
-            kamino_e.timer = 0.0f;
-            kamino_e.state = 4;
-        } else {
-            kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, kamino_e.timer);
+            break;
         }
-        kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
-        break;
-    case 4: {
-        // Slide out to the orbit radius.
-        kamino_e.timer += FRAMETIME;
-        f32 blend;
-        if (kamino_e.timer >= 4.0f) {
-            kamino_e.timer = 0.0f;
-            kamino_e.state = 5;
-            blend = 1.0f;
-        } else {
-            blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
-        }
-        kamino_e.position.x = hover.x * blend + kamino_e_centre.x * (1.0f - blend);
-        kamino_e.position.z = blend * hover.z + (1.0f - blend) * kamino_e_centre.z;
-        kamino_e.pitch = SeekRot(kamino_e.pitch, 0xb60, 4.0f);
-        kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
-        break;
-    }
-    case 5: {
-        NUVEC aim;
-        i32 pitch_target = 0xb60;
-        i32 yaw_target = 0xc000;
-        bool aiming = false;
-        if (kamino_e.hit_turret != NULL) {
-            aim = *NuSpecialGetDrawPos(&kamino_e.hit_turret->primary_anim_obj->special);
-            aim.y += 0.5f;
-            aiming = true;
-        } else if (kamino_e.can_fire->value == 1.0f) {
-            GameObject_s *target = NULL;
-            f32 nearest = 1000000000.0f;
-            for (i32 i = 0; i < 8; i++) {
-                GameObject_s *player = Player[i];
-                if (player != NULL && (player->apiobj.field_0x1f8 & 0x1001) == 0x1001 &&
-                    (player->apiobj.character_data->model_flags & 0x80000) == 0) {
-                    NUVEC offset;
-                    f32 distance = NuVecDistSqr(&player->apiobj.collision_position,
-                                                reinterpret_cast<NUVEC *>(&matrix->m30), &offset);
-                    if (nearest > distance) {
-                        nearest = distance;
-                        target = Player[i];
+        case 5: {
+            NUVEC aim;
+            i32 pitch_target = 0xb60;
+            i32 yaw_target = 0xc000;
+            bool aiming = false;
+            if (kamino_e.hit_turret != NULL) {
+                aim = *NuSpecialGetDrawPos(&kamino_e.hit_turret->primary_anim_obj->special);
+                aim.y += 0.5f;
+                aiming = true;
+            } else if (kamino_e.can_fire->value == 1.0f) {
+                GameObject_s *target = NULL;
+                f32 nearest = 1000000000.0f;
+                for (i32 i = 0; i < 8; i++) {
+                    GameObject_s *player = Player[i];
+                    if (player != NULL && (player->apiobj.field_0x1f8 & 0x1001) == 0x1001 &&
+                        (player->apiobj.character_data->model_flags & 0x80000) == 0) {
+                        NUVEC offset;
+                        f32 distance = NuVecDistSqr(&player->apiobj.collision_position,
+                                                    reinterpret_cast<NUVEC *>(&matrix->m30), &offset);
+                        if (nearest > distance) {
+                            nearest = distance;
+                            target = Player[i];
+                        }
                     }
                 }
+                if (target != NULL) {
+                    aim.x = target->apiobj.collision_position.x;
+                    aim.y = target->apiobj.field_0x218 + 0.1f;
+                    aim.z = target->apiobj.collision_position.z;
+                    aiming = true;
+                }
             }
-            if (target != NULL) {
-                aim.x = target->apiobj.collision_position.x;
-                aim.y = target->apiobj.field_0x218 + 0.1f;
-                aim.z = target->apiobj.collision_position.z;
-                aiming = true;
-            }
-        }
-        kamino_e.orbit_pitch = -0xe38;
-        if (!aiming) {
-            kamino_e.orbit_yaw = 0x4000;
-        } else {
-            // Orbit around to the side of the arena the target is on.
-            f32 lead = aim.z - kamino_e_centre.z;
-            if (lead > 2.5f)
-                lead = 2.5f;
-            else if (lead < -2.5f)
-                lead = -2.5f;
-            kamino_e.orbit_yaw = static_cast<i32>(lead / 2.5f * 30.0f * 182.04445f) + 0x4000;
-            NUVEC muzzle;
-            muzzle.x = 0.0f;
-            muzzle.y = -kamino_e_gunoffset[0].y;
-            muzzle.z = -kamino_e_gunoffset[0].z;
-            NuVecMtxRotate(&muzzle, &muzzle, matrix);
-            NuVecAdd(&muzzle, &muzzle, &aim);
-            NUVEC to_target;
-            NuVecSub(&to_target, &muzzle, &kamino_e.position);
-            yaw_target = static_cast<i32>(NuAtan2(to_target.x, to_target.z) * 10430.378f);
-            pitch_target = static_cast<i32>(
-                NuAtan2(-to_target.y, NuFsqrt(to_target.x * to_target.x + to_target.z * to_target.z)) * 10430.378f);
-            kamino_e.timer += FRAMETIME;
-            if (kamino_e.timer > 0.15f) {
-                kamino_e.timer = 0.0f;
+            kamino_e.orbit_pitch = -0xe38;
+            if (!aiming) {
+                kamino_e.orbit_yaw = 0x4000;
+            } else {
+                // Orbit around to the side of the arena the target is on.
+                f32 lead = aim.z - kamino_e_centre.z;
+                if (lead > 2.5f)
+                    lead = 2.5f;
+                else if (lead < -2.5f)
+                    lead = -2.5f;
+                kamino_e.orbit_yaw = static_cast<i32>(lead / 2.5f * 30.0f * 182.04445f) + 0x4000;
                 NUVEC muzzle;
-                NUMTX bolt_matrix = *matrix;
-                NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
-                f32 range = NuVecDist(&muzzle, &aim, NULL);
-                NuMtxPreRotateY(&bolt_matrix,
-                                static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
-                addbolt_nosfx = 1;
-                BOLT_s *bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
-                if (bolt != NULL)
-                    bolt->flags_word |= 0x10;
-                kamino_e.gun = kamino_e.gun == 0;
-                bolt_matrix = *matrix;
-                NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
-                NuMtxPreRotateY(&bolt_matrix,
-                                static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
-                addbolt_nosfx = 1;
-                bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
-                if (bolt != NULL)
-                    bolt->flags_word |= 0x10;
-                kamino_e.gun = kamino_e.gun == 0;
-                PlaySfx("Kam_Slave1BlasterFire", &muzzle);
+                muzzle.x = 0.0f;
+                muzzle.y = -kamino_e_gunoffset[0].y;
+                muzzle.z = -kamino_e_gunoffset[0].z;
+                NuVecMtxRotate(&muzzle, &muzzle, matrix);
+                NuVecAdd(&muzzle, &muzzle, &aim);
+                NUVEC to_target;
+                NuVecSub(&to_target, &muzzle, &kamino_e.position);
+                yaw_target = static_cast<i32>(NuAtan2(to_target.x, to_target.z) * 10430.378f);
+                pitch_target = static_cast<i32>(
+                    NuAtan2(-to_target.y, NuFsqrt(to_target.x * to_target.x + to_target.z * to_target.z)) * 10430.378f);
+                kamino_e.timer += FRAMETIME;
+                if (kamino_e.timer > 0.15f) {
+                    kamino_e.timer = 0.0f;
+                    NUVEC muzzle;
+                    NUMTX bolt_matrix = *matrix;
+                    NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
+                    f32 range = NuVecDist(&muzzle, &aim, NULL);
+                    NuMtxPreRotateY(&bolt_matrix,
+                                    static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
+                    addbolt_nosfx = 1;
+                    BOLT_s *bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
+                    if (bolt != NULL)
+                        bolt->flags_word |= 0x10;
+                    kamino_e.gun = kamino_e.gun == 0;
+                    bolt_matrix = *matrix;
+                    NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
+                    NuMtxPreRotateY(&bolt_matrix,
+                                    static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
+                    addbolt_nosfx = 1;
+                    bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
+                    if (bolt != NULL)
+                        bolt->flags_word |= 0x10;
+                    kamino_e.gun = kamino_e.gun == 0;
+                    PlaySfx("Kam_Slave1BlasterFire", &muzzle);
+                }
+                pitch_target = static_cast<u16>(pitch_target);
+                yaw_target = static_cast<u16>(yaw_target);
             }
-            pitch_target = static_cast<u16>(pitch_target);
-            yaw_target = static_cast<u16>(yaw_target);
+            SeekVec(&kamino_e.position, &kamino_e.position, &hover, 1.0f);
+            kamino_e.pitch = SeekRot(kamino_e.pitch, pitch_target, 1.0f);
+            kamino_e.yaw = SeekRot(kamino_e.yaw, yaw_target, 1.0f);
+            break;
         }
-        SeekVec(&kamino_e.position, &kamino_e.position, &hover, 1.0f);
-        kamino_e.pitch = SeekRot(kamino_e.pitch, pitch_target, 1.0f);
-        kamino_e.yaw = SeekRot(kamino_e.yaw, yaw_target, 1.0f);
-        break;
-    }
     }
     NuMtxSetTranslation(matrix, &kamino_e.position);
     NuMtxPreRotateY(matrix, kamino_e.yaw);
     NuMtxPreRotateX(matrix, kamino_e.pitch);
     AISYS_s *ai_sys = world->ai_sys;
-    AIPATHCNX_s *bridge = static_cast<AIPATHCNX_s *>(
-        AIPAthFindPathCnx(ai_sys, reinterpret_cast<i32>(ai_sys->path_sys->paths), "Bridge1_a", "Bridge1_b",
-                          &connection_index));
+    AIPATHCNX_s *bridge = static_cast<AIPATHCNX_s *>(AIPAthFindPathCnx(
+        ai_sys, reinterpret_cast<i32>(ai_sys->path_sys->paths), "Bridge1_a", "Bridge1_b", &connection_index));
     AIAREA_s *fight_area = AISysFindArea(WORLD->ai_sys, "Fight");
     if (bridge == NULL || jango == NULL || fight_area == NULL)
         return;
@@ -1047,8 +1056,7 @@ i32 KaminoE_CheckPlatHit(BOLT_s *bolt) {
         return 0;
     for (i32 i = 0; i < 4; i++) {
         GIZTURRET_s *turret = kamino_e.turrets[i];
-        if (turret != NULL && kamino_e.panels[i] != NULL &&
-            (turret->flags & 0x32) == 2 && kamino_e.hit_turret == NULL)
+        if (turret != NULL && kamino_e.panels[i] != NULL && (turret->flags & 0x32) == 2 && kamino_e.hit_turret == NULL)
             kamino_e.hit_turret = turret;
     }
     return 1;
@@ -1146,8 +1154,7 @@ void FactoryB_Update(WORLDINFO_s *world) {
         instance->flags_88 &= ~2U;
         world->current_level->conveyor_x_speed = 0.0f;
         world->current_level->conveyor_z_speed = 0.0f;
-    } else if (static_cast<instNUGCUTSCENE_s *>(factoryb_cut->instance)->current_frame >
-               FactoryBConveyorStopFrame) {
+    } else if (static_cast<instNUGCUTSCENE_s *>(factoryb_cut->instance)->current_frame > FactoryBConveyorStopFrame) {
         world->current_level->conveyor_x_speed = FactoryBConveyorXSpeed;
         world->current_level->conveyor_z_speed = FactoryBConveyorZSpeed;
         PlaySfx("FacB_BeltLp", NULL);
@@ -1237,42 +1244,42 @@ void FactoryG_Update(WORLDINFO_s *world) {
 // One Jedi_B arena slot. Slot 0 of a cluster is the "goody" the player must
 // reach; the slots that follow it are the baddies placed around it.
 struct JEDIB_SPAWN_s {
-    NUVEC position;      // 0x00
+    NUVEC position;       // 0x00
     i32 angle;            // 0x0c, orbit angle of a baddie around its goody
     i32 field_0x10;       // 0x10, -1 while the slot holds no character
     GameObject_s *object; // 0x14, the character spawned into this slot
     JEDIB_SPAWN_s *link;  // 0x18, goody <-> baddie cross link
-    AILOCATOR_s locator; // 0x1c
-    i32 field_0x58;      // 0x58
-    u8 flags;            // 0x5c, bit 1 marks a baddie
-    u8 filler_0x5d[0x3]; // 0x5d
+    AILOCATOR_s locator;  // 0x1c
+    i32 field_0x58;       // 0x58
+    u8 flags;             // 0x5c, bit 1 marks a baddie
+    u8 filler_0x5d[0x3];  // 0x5d
 };
 DECOMP_ASSERT(sizeof(JEDIB_SPAWN_s) == 0x60, "Jedi_B spawn slot size");
 
 struct JEDIB_s {
-    JEDIB_SPAWN_s spawns[256];        // 0x0000
-    JEDIB_SPAWN_s active[8];          // 0x6000, the slots currently populated
-    i16 spawn_count;                  // 0x6300
-    i16 active_count;                 // 0x6302
-    u16 stage;                        // 0x6304
-    u16 phase;                        // 0x6306
-    f32 timer;                        // 0x6308
-    u32 seed;                         // 0x630c
-    nuhspecial_s pillars[3][4];       // 0x6310, four parts per phase pillar
-    GameObject_s *players[3];         // 0x63a0
-    GIZAIMESSAGE_s *phase_message;    // 0x63ac
-    GIZAIMESSAGE_s *phase_complete;   // 0x63b0
-    GIZAIMESSAGE_s *objectives_left;  // 0x63b4
-    GIZAIMESSAGE_s *restrain[3];      // 0x63b8, one per phase character
-    i16 target_ids[6];                // 0x63c4
-    u8 target_flags[6];               // 0x63d0
-    u8 filler_0x63d6[0x2];            // 0x63d6
-    GameObject_s *boss;               // 0x63d8
-    f32 objective_timer;              // 0x63dc
-    u32 mask_low;                     // 0x63e0, party bits 0..31
-    u32 mask_high;                    // 0x63e4, party bits 32..63
-    u8 flags;                         // 0x63e8
-    u8 filler_0x63e9[0x3];            // 0x63e9
+    JEDIB_SPAWN_s spawns[256];       // 0x0000
+    JEDIB_SPAWN_s active[8];         // 0x6000, the slots currently populated
+    i16 spawn_count;                 // 0x6300
+    i16 active_count;                // 0x6302
+    u16 stage;                       // 0x6304
+    u16 phase;                       // 0x6306
+    f32 timer;                       // 0x6308
+    u32 seed;                        // 0x630c
+    nuhspecial_s pillars[3][4];      // 0x6310, four parts per phase pillar
+    GameObject_s *players[3];        // 0x63a0
+    GIZAIMESSAGE_s *phase_message;   // 0x63ac
+    GIZAIMESSAGE_s *phase_complete;  // 0x63b0
+    GIZAIMESSAGE_s *objectives_left; // 0x63b4
+    GIZAIMESSAGE_s *restrain[3];     // 0x63b8, one per phase character
+    i16 target_ids[6];               // 0x63c4
+    u8 target_flags[6];              // 0x63d0
+    u8 filler_0x63d6[0x2];           // 0x63d6
+    GameObject_s *boss;              // 0x63d8
+    f32 objective_timer;             // 0x63dc
+    u32 mask_low;                    // 0x63e0, party bits 0..31
+    u32 mask_high;                   // 0x63e4, party bits 32..63
+    u8 flags;                        // 0x63e8
+    u8 filler_0x63e9[0x3];           // 0x63e9
 };
 DECOMP_ASSERT(sizeof(JEDIB_s) == 0x63ec, "Jedi_B state size");
 static JEDIB_s jedi_b;
@@ -1294,31 +1301,23 @@ static JEDIB_PHASE_s jedi_b_phase1[8] = {
     {NULL, NULL},
 };
 static JEDIB_PHASE_s jedi_b_phase2[8] = {
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {NULL, NULL},
+    {&id_DROIDEKA, "phase_droids"},         {&id_DROIDEKA, "phase_droids"},
+    {&id_SUPERBATTLEDROID, "phase_droids"}, {&id_SUPERBATTLEDROID, "phase_droids"},
+    {&id_SUPERBATTLEDROID, "phase_droids"}, {&id_SUPERBATTLEDROID, "phase_droids"},
+    {&id_SUPERBATTLEDROID, "phase_droids"}, {NULL, NULL},
 };
 static JEDIB_PHASE_s jedi_b_phase3[8] = {
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_SUPERBATTLEDROID, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {&id_DROIDEKA, "phase_droids"},
-    {NULL, NULL},
+    {&id_SUPERBATTLEDROID, "phase_droids"}, {&id_SUPERBATTLEDROID, "phase_droids"},
+    {&id_DROIDEKA, "phase_droids"},         {&id_DROIDEKA, "phase_droids"},
+    {&id_DROIDEKA, "phase_droids"},         {&id_DROIDEKA, "phase_droids"},
+    {&id_DROIDEKA, "phase_droids"},         {NULL, NULL},
 };
 
 // The 32-byte level-hack block Jedi_B publishes to network clients.
 struct JEDIB_PACKET_s {
-    u16 phase;         // 0x00
-    u16 stage;         // 0x02
-    i16 target_count;  // 0x04
+    u16 phase;        // 0x00
+    u16 stage;        // 0x02
+    i16 target_count; // 0x04
     u8 filler_0x6[0x2];
     i16 target_ids[6];   // 0x08
     u8 filler_0x14[0x4]; // 0x14
@@ -1455,43 +1454,42 @@ void JediB_Init(WORLDINFO_s *world) {
                 position.z = z + (jedib_offset - (jedib_offset + jedib_offset) * NuRandFloatSeeded(&jedi_b.seed));
                 f32 distance = position.x * position.x + position.z * position.z;
                 if (jedib_outer_r * jedib_outer_r > distance && distance > jedib_inner * jedib_inner) {
-                f32 height = GameShadow(NULL, &position, 5.0f, 0);
-                if (height != 2000000.0f)
-                    position.y = height;
-                if (!JediBInitLocator(world, &position, NuRandIntSeeded(&jedi_b.seed), &locator, jedib_outer_r))
-                    continue;
-                if (jedi_b.spawn_count > 0xff)
-                    continue;
-                JEDIB_SPAWN_s *goody = &jedi_b.spawns[jedi_b.spawn_count];
-                jedi_b.spawn_count = jedi_b.spawn_count + 1;
-                goody->position = position;
-                goody->locator = locator;
-                goody->flags &= ~2;
-                orbit.x = 0.0f;
-                orbit.y = 0.0f;
-                orbit.z = jedib_proximity;
-                i32 angle = NuRandIntSeeded(&jedi_b.seed);
-                NuVecRotateY(&orbit, &orbit, NuRandIntSeeded(&jedi_b.seed));
-                i32 baddies = jedib_min_baddies_per_goody +
-                              static_cast<i32>(NuRandIntSeeded(&jedi_b.seed) %
-                                               static_cast<u32>(jedib_max_baddies_per_goody -
-                                                                jedib_min_baddies_per_goody));
-                for (i32 i = 0; i < baddies && jedi_b.spawn_count <= 0xff; i++) {
-                    if (i != 0)
-                        angle = NuAngAdd(angle, 0x10000 / baddies);
-                    NuVecRotateY(&position, &orbit, angle);
-                    NuVecAdd(&position, &position, &goody->position);
-                    if (!JediBInitLocator(world, &position, angle, &locator, jedib_outer_r))
-                        continue;
-                    JEDIB_SPAWN_s *baddie = &jedi_b.spawns[jedi_b.spawn_count];
-                    jedi_b.spawn_count = jedi_b.spawn_count + 1;
-                    baddie->flags |= 2;
-                    baddie->position = position;
-                    baddie->locator = locator;
-                    baddie->link = goody;
-                    baddie->angle = angle;
-                    goody->link = baddie;
-                }
+                    f32 height = GameShadow(NULL, &position, 5.0f, 0);
+                    if (height != 2000000.0f)
+                        position.y = height;
+                    if (JediBInitLocator(world, &position, NuRandIntSeeded(&jedi_b.seed), &locator, jedib_outer_r) &&
+                        jedi_b.spawn_count <= 0xff) {
+                        JEDIB_SPAWN_s *goody = &jedi_b.spawns[jedi_b.spawn_count];
+                        jedi_b.spawn_count = jedi_b.spawn_count + 1;
+                        goody->position = position;
+                        goody->locator = locator;
+                        goody->flags &= ~2;
+                        orbit.x = 0.0f;
+                        orbit.y = 0.0f;
+                        orbit.z = jedib_proximity;
+                        i32 angle = NuRandIntSeeded(&jedi_b.seed);
+                        NuVecRotateY(&orbit, &orbit, NuRandIntSeeded(&jedi_b.seed));
+                        i32 baddies = jedib_min_baddies_per_goody +
+                                      static_cast<i32>(
+                                          NuRandIntSeeded(&jedi_b.seed) %
+                                          static_cast<u32>(jedib_max_baddies_per_goody - jedib_min_baddies_per_goody));
+                        for (i32 i = 0; i < baddies && jedi_b.spawn_count <= 0xff; i++) {
+                            if (i != 0)
+                                angle = NuAngAdd(angle, 0x10000 / baddies);
+                            NuVecRotateY(&position, &orbit, angle);
+                            NuVecAdd(&position, &position, &goody->position);
+                            if (JediBInitLocator(world, &position, angle, &locator, jedib_outer_r)) {
+                                JEDIB_SPAWN_s *baddie = &jedi_b.spawns[jedi_b.spawn_count];
+                                jedi_b.spawn_count = jedi_b.spawn_count + 1;
+                                baddie->flags |= 2;
+                                baddie->position = position;
+                                baddie->locator = locator;
+                                baddie->link = goody;
+                                baddie->angle = angle;
+                                goody->link = baddie;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1631,10 +1629,9 @@ void JediB_Update(WORLDINFO_s *world) {
             jedi_b.mask_high = high;
             jedi_b.mask_low = low;
         }
-        if (player2 != NULL &&
-            player2->apiobj.collision_position.x * player2->apiobj.collision_position.x +
-                    player2->apiobj.collision_position.z * player2->apiobj.collision_position.z >
-                safe) {
+        if (player2 != NULL && player2->apiobj.collision_position.x * player2->apiobj.collision_position.x +
+                                       player2->apiobj.collision_position.z * player2->apiobj.collision_position.z >
+                                   safe) {
             u8 slot = player2->apiobj.field_0x289;
             u32 bit_high = static_cast<u32>((slot >> 5) & 1) << slot;
             u32 bit_low = static_cast<u32>(((slot >> 5) & 1) ^ 1) << slot;
@@ -1949,49 +1946,49 @@ void JediB_DrawPanel(WORLDINFO_s *) {
         if (jedi_b.stage > 7)
             return;
         switch (jedi_b.stage) {
-        case 1:
-        case 2:
-        case 3: {
-            i32 count;
-            if (jedi_b.active_count != 0) {
-                i32 active = jedi_b.active_count;
-                count = active > 8 ? 8 : active;
-                for (i32 i = 0; i < count; i++) {
-                    ids[i] = static_cast<i16>(jedi_b.active[i].field_0x10);
-                    if (jedi_b.active[i].object == NULL)
-                        flags[i] = 1;
+            case 1:
+            case 2:
+            case 3: {
+                i32 count;
+                if (jedi_b.active_count != 0) {
+                    i32 active = jedi_b.active_count;
+                    count = active > 8 ? 8 : active;
+                    for (i32 i = 0; i < count; i++) {
+                        ids[i] = static_cast<i16>(jedi_b.active[i].field_0x10);
+                        if (jedi_b.active[i].object == NULL)
+                            flags[i] = 1;
+                    }
+                } else {
+                    if (jedi_b.stage == 1)
+                        ids[0] = id_PADMECLAWED;
+                    else if (jedi_b.stage == 2)
+                        ids[0] = id_ANAKINPADAWAN;
+                    else
+                        ids[0] = id_OBIWANKENOBIJEDIMASTER;
+                    count = 1;
                 }
-            } else {
-                if (jedi_b.stage == 1)
-                    ids[0] = id_PADMECLAWED;
-                else if (jedi_b.stage == 2)
-                    ids[0] = id_ANAKINPADAWAN;
-                else
-                    ids[0] = id_OBIWANKENOBIJEDIMASTER;
-                count = 1;
+                DrawMeleeTargets(ids, reinterpret_cast<char *>(flags), NULL, count);
+                if (nethost != 0) {
+                    memmove(jedib_netpacket->target_ids, ids, count * 2);
+                    memmove(jedib_netpacket->target_flags, flags, count);
+                    jedib_netpacket->target_count = count;
+                }
+                break;
             }
-            DrawMeleeTargets(ids, reinterpret_cast<char *>(flags), NULL, count);
-            if (nethost != 0) {
-                memmove(jedib_netpacket->target_ids, ids, count * 2);
-                memmove(jedib_netpacket->target_flags, flags, count);
-                jedib_netpacket->target_count = count;
-            }
-            break;
-        }
-        case 4:
-        case 5:
-        case 6:
-            DrawMeleeTargets(jedi_b.target_ids, reinterpret_cast<char *>(jedi_b.target_flags), NULL,
-                             g_lowEndLevelBehaviour == 0 ? 6 : 4);
-            if (nethost != 0) {
-                memmove(jedib_netpacket->target_ids, jedi_b.target_ids, sizeof(jedi_b.target_ids));
-                memmove(jedib_netpacket->target_flags, jedi_b.target_flags, sizeof(jedi_b.target_flags));
-            }
-            break;
-        case 7:
-            if (jedi_b.boss != NULL)
-                DrawBossHitPoints(jedi_b.boss);
-            break;
+            case 4:
+            case 5:
+            case 6:
+                DrawMeleeTargets(jedi_b.target_ids, reinterpret_cast<char *>(jedi_b.target_flags), NULL,
+                                 g_lowEndLevelBehaviour == 0 ? 6 : 4);
+                if (nethost != 0) {
+                    memmove(jedib_netpacket->target_ids, jedi_b.target_ids, sizeof(jedi_b.target_ids));
+                    memmove(jedib_netpacket->target_flags, jedi_b.target_flags, sizeof(jedi_b.target_flags));
+                }
+                break;
+            case 7:
+                if (jedi_b.boss != NULL)
+                    DrawBossHitPoints(jedi_b.boss);
+                break;
         }
         return;
     }
@@ -2000,26 +1997,26 @@ void JediB_DrawPanel(WORLDINFO_s *) {
     if (jedib_netpacket->stage > 7)
         return;
     switch (jedib_netpacket->stage) {
-    case 1:
-    case 2:
-    case 3:
-        DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
-                         jedib_netpacket->target_count);
-        break;
-    case 4:
-    case 5:
-    case 6:
-        DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
-                         g_lowEndLevelBehaviour == 0 ? 6 : 4);
-        break;
-    case 7:
-        if (jedi_b.boss == NULL) {
-            jedi_b.boss = FindGameObject(id_JANGOFETT, 1, 1, 0, 0);
-            if (jedi_b.boss == NULL)
-                return;
-        }
-        DrawBossHitPoints(jedi_b.boss);
-        break;
+        case 1:
+        case 2:
+        case 3:
+            DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
+                             jedib_netpacket->target_count);
+            break;
+        case 4:
+        case 5:
+        case 6:
+            DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
+                             g_lowEndLevelBehaviour == 0 ? 6 : 4);
+            break;
+        case 7:
+            if (jedi_b.boss == NULL) {
+                jedi_b.boss = FindGameObject(id_JANGOFETT, 1, 1, 0, 0);
+                if (jedi_b.boss == NULL)
+                    return;
+            }
+            DrawBossHitPoints(jedi_b.boss);
+            break;
     }
 }
 
@@ -2090,8 +2087,8 @@ void GunShip_DragBombSeekBlowUp(GameObject_s *object) {
         if (LevGizmo[i] != NULL) {
             GIZMOBLOWUP_s *blowup = static_cast<GIZMOBLOWUP_s *>(LevGizmo[i]->object);
             if (blowup != NULL && (blowup->status_flags & 0x800001) == 0x800000) {
-                f32 distance = NuVecDistSqr(&blowup->mid_position, &object->apiobj.collision_position,
-                                            &candidate_offset);
+                f32 distance =
+                    NuVecDistSqr(&blowup->mid_position, &object->apiobj.collision_position, &candidate_offset);
                 if (distance < nearest_distance) {
                     nearest_distance = distance;
                     offset = candidate_offset;
