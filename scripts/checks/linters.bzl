@@ -192,8 +192,6 @@ clang_tidy_android = _clang_tidy_aspect(
     extra_args = ["--extra-arg=--target=i686-linux-android"],
 )
 
-# clang-tidy otherwise parses with the host triple, so linting these sources on
-# macOS defines __APPLE__ and sends SDL down its Apple branch.
 clang_tidy_wasm = _clang_tidy_aspect(
     extra_args = ["--extra-arg=--target=wasm32-unknown-emscripten"],
 )
