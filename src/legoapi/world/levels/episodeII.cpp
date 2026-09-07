@@ -73,7 +73,7 @@ extern "C" {
     i32 jedib_min_baddies_per_goody = 1;
     u32 jedib_seed = 17;
     i16 *JediB_playerids[3] = {&id_PADMECLAWED, &id_ANAKINPADAWAN, &id_OBIWANKENOBIJEDIMASTER};
-    void *jedib_netpacket;
+    struct JEDIB_PACKET_s *jedib_netpacket;
     i32 jedib_n_active;
     i32 jedib_n_drawn;
     void AISysGetPathPos(AISYS_s *, NUVEC *, AIPATH_s **, i32, i32);
@@ -1005,13 +1005,13 @@ struct JEDIB_s {
     JEDIB_SPAWN_s active[8];          // 0x6000, the slots currently populated
     i16 spawn_count;                  // 0x6300
     i16 active_count;                 // 0x6302
-    i16 field_0x6304;                 // 0x6304
-    i16 field_0x6306;                 // 0x6306
+    u16 stage;                        // 0x6304
+    u16 phase;                        // 0x6306
     u8 filler_0x6308[0x4];            // 0x6308
     u32 seed;                         // 0x630c
     nuhspecial_s pillars[3][4];       // 0x6310, four parts per phase pillar
     GameObject_s *players[3];         // 0x63a0
-    GIZAIMESSAGE_s *phase;            // 0x63ac
+    GIZAIMESSAGE_s *phase_message;    // 0x63ac
     GIZAIMESSAGE_s *phase_complete;   // 0x63b0
     GIZAIMESSAGE_s *objectives_left;  // 0x63b4
     GIZAIMESSAGE_s *restrain_padme;   // 0x63b8
@@ -1027,6 +1027,19 @@ struct JEDIB_s {
 };
 DECOMP_ASSERT(sizeof(JEDIB_s) == 0x63ec, "Jedi_B state size");
 static JEDIB_s jedi_b;
+
+// The 32-byte level-hack block Jedi_B publishes to network clients.
+struct JEDIB_PACKET_s {
+    u16 phase;         // 0x00
+    u16 stage;         // 0x02
+    i16 target_count;  // 0x04
+    u8 filler_0x6[0x2];
+    i16 target_ids[6];   // 0x08
+    u8 filler_0x14[0x4]; // 0x14
+    u8 target_flags[6];  // 0x18
+    u8 filler_0x1e[0x2]; // 0x1e
+};
+DECOMP_ASSERT(sizeof(JEDIB_PACKET_s) == 0x20, "Jedi_B packet size");
 
 // Places one arena slot: pushes the point clear of any anti-node, drops it onto
 // the terrain and resolves the AI path position for it. Returns false when the
@@ -1072,7 +1085,7 @@ void JediB_Init(WORLDINFO_s *world) {
         return;
     memset(&jedi_b, 0, sizeof(jedi_b));
     jedi_b.seed = jedib_seed;
-    jedib_netpacket = SetLevelHack(0x20);
+    jedib_netpacket = static_cast<JEDIB_PACKET_s *>(SetLevelHack(0x20));
     NUVEC position;
     NUVEC orbit;
     AILOCATOR_s locator;
@@ -1175,7 +1188,7 @@ void JediB_Reset(WORLDINFO_s *world) {
         if (FreePlay == 0)
             jedi_b.players[phase - 1] = JediB_FindPlayer(phase - 1);
     }
-    jedi_b.phase = SetGizAIMessage(gizaimessagesys, "Phase", 0.0f, NULL);
+    jedi_b.phase_message = SetGizAIMessage(gizaimessagesys, "Phase", 0.0f, NULL);
     jedi_b.phase_complete = SetGizAIMessage(gizaimessagesys, "PhaseComplete", 0.0f, NULL);
     jedi_b.objectives_left = SetGizAIMessage(gizaimessagesys, "ObjectivesLeft", 0.0f, NULL);
     jedi_b.restrain_padme = SetGizAIMessage(gizaimessagesys, "RestrainPadme", 0.0f, NULL);
@@ -1189,6 +1202,92 @@ void JediB_Update(WORLDINFO_s *) {
 }
 
 void JediB_DrawPanel(WORLDINFO_s *) {
+    if (Mission_Active(MissionSys) != NULL)
+        return;
+    i16 ids[8];
+    u8 flags[8] = {0};
+    if (netclient == 0) {
+        if (nethost != 0) {
+            jedib_netpacket->phase = jedi_b.phase;
+            jedib_netpacket->stage = jedi_b.stage;
+        }
+        if (jedi_b.phase != 1)
+            return;
+        if (jedi_b.stage > 7)
+            return;
+        switch (jedi_b.stage) {
+        case 1:
+        case 2:
+        case 3: {
+            i32 count;
+            if (jedi_b.active_count != 0) {
+                i32 active = jedi_b.active_count;
+                count = active > 8 ? 8 : active;
+                for (i32 i = 0; i < count; i++) {
+                    ids[i] = static_cast<i16>(jedi_b.active[i].field_0x10);
+                    if (jedi_b.active[i].object == NULL)
+                        flags[i] = 1;
+                }
+            } else {
+                if (jedi_b.stage == 1)
+                    ids[0] = id_PADMECLAWED;
+                else if (jedi_b.stage == 2)
+                    ids[0] = id_ANAKINPADAWAN;
+                else
+                    ids[0] = id_OBIWANKENOBIJEDIMASTER;
+                count = 1;
+            }
+            DrawMeleeTargets(ids, reinterpret_cast<char *>(flags), NULL, count);
+            if (nethost != 0) {
+                memmove(jedib_netpacket->target_ids, ids, count * 2);
+                memmove(jedib_netpacket->target_flags, flags, count);
+                jedib_netpacket->target_count = count;
+            }
+            break;
+        }
+        case 4:
+        case 5:
+        case 6:
+            DrawMeleeTargets(jedi_b.target_ids, reinterpret_cast<char *>(jedi_b.target_flags), NULL,
+                             g_lowEndLevelBehaviour == 0 ? 6 : 4);
+            if (nethost != 0) {
+                memmove(jedib_netpacket->target_ids, jedi_b.target_ids, sizeof(jedi_b.target_ids));
+                memmove(jedib_netpacket->target_flags, jedi_b.target_flags, sizeof(jedi_b.target_flags));
+            }
+            break;
+        case 7:
+            if (jedi_b.boss != NULL)
+                DrawBossHitPoints(jedi_b.boss);
+            break;
+        }
+        return;
+    }
+    if (jedib_netpacket->phase != 1)
+        return;
+    if (jedib_netpacket->stage > 7)
+        return;
+    switch (jedib_netpacket->stage) {
+    case 1:
+    case 2:
+    case 3:
+        DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
+                         jedib_netpacket->target_count);
+        break;
+    case 4:
+    case 5:
+    case 6:
+        DrawMeleeTargets(jedib_netpacket->target_ids, reinterpret_cast<char *>(jedib_netpacket->target_flags), NULL,
+                         g_lowEndLevelBehaviour == 0 ? 6 : 4);
+        break;
+    case 7:
+        if (jedi_b.boss == NULL) {
+            jedi_b.boss = FindGameObject(id_JANGOFETT, 1, 1, 0, 0);
+            if (jedi_b.boss == NULL)
+                return;
+        }
+        DrawBossHitPoints(jedi_b.boss);
+        break;
+    }
 }
 
 // ===========================================================================
