@@ -1780,19 +1780,17 @@ void JediB_Update(WORLDINFO_s *world) {
                 jedi_b.objective_timer += FRAMETIME;
                 if (jedi_b.objective_timer > 5.0f) {
                     // Point the panel at one of the remaining targets.
-                    if (jedi_b.spawn_count > 0 && (jedi_b.spawns[0].flags & 0x10) == 0) {
-                        i32 marked = -1;
-                        for (i32 i = 0; i < jedi_b.spawn_count; i++) {
-                            if ((jedi_b.spawns[i].flags & 8) != 0)
-                                marked = i;
-                            if (i + 1 < jedi_b.spawn_count && (jedi_b.spawns[i + 1].flags & 0x10) != 0) {
-                                marked = -1;
-                                break;
-                            }
+                    i32 marked = -1;
+                    for (i32 i = 0; i < jedi_b.spawn_count; i++) {
+                        if ((jedi_b.spawns[i].flags & 0x10) != 0) {
+                            marked = -1;
+                            break;
                         }
-                        if (marked != -1)
-                            jedi_b.spawns[marked].flags |= 0x10;
+                        if ((jedi_b.spawns[i].flags & 8) != 0)
+                            marked = i;
                     }
+                    if (marked != -1)
+                        jedi_b.spawns[marked].flags |= 0x10;
                     jedi_b.objective_timer = 0.0f;
                 }
             } else if (jedi_b.stage == 7) {
