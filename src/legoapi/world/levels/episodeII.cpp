@@ -6,6 +6,7 @@
 #include "legoapi/world/level.h"
 #include "globals.h"
 #include "legoapi/characters/core/players.h"
+#include "batman.h"
 #include "legoapi/characters/core/character.h"
 #include "legoapi/characters/motion.h"
 #include "legoapi/characters/motion/gameanim.h"
@@ -76,7 +77,8 @@ extern "C" {
     struct JEDIB_PACKET_s *jedib_netpacket;
     i32 jedib_n_active;
     i32 jedib_n_drawn;
-    void AISysGetPathPos(AISYS_s *, NUVEC *, AIPATH_s **, i32, i32);
+    void AISysGetPathPos(AISYS_s *, NUVEC *, AIPATHINFO_s *, i32, i32);
+    i32 addbolt_nosfx;
     // Gunship_B drag-bomb seek tuning.
     f32 gunshipb_seekmomseek = 5.0f;
     f32 gunshipb_seekmom = 5.0f;
@@ -98,6 +100,9 @@ extern "C" {
 
 NUGSPLINE *edSpline_SplineFind(nugscn_s *, char *);
 void ClearAICreatures();
+void InitSurfaceInfo(GameObject_s *);
+i32 instNuGCutSceneIsFinished(instNUGCUTSCENE_s *);
+GIZMO_s *GizmoFindByData(GIZMOSYS_s *, i32, void *);
 void UpdatePaintPuzzle(WORLDINFO_s *);
 GIZTURRET_s *GizTurret_FindByName(GIZTURRETSYS_s *, char *);
 
@@ -166,11 +171,14 @@ struct KAMINO_E_s {
     i32 orbit_yaw;
     f32 timer;
     f32 elapsed;
-    u8 gun;
+    i8 gun;
     u8 state;
     u16 bolt_filter; // 0x76
 };
 DECOMP_ASSERT(sizeof(struct KAMINO_E_s) == 0x78, "Kamino E state size");
+// Slave I's hover centre, and the muzzle offsets of its two blasters.
+static NUVEC kamino_e_centre = {56.5f, -2.89f, 8.0f};
+static NUVEC kamino_e_gunoffset[2] = {{0.2f, -1.1f, 0.9f}, {-0.2f, -1.1f, 0.9f}};
 static struct KAMINO_E_s kamino_e;
 
 // Episode 2 level handlers, in the game's Episode_II progression:
@@ -771,7 +779,244 @@ void KaminoE_Reset(WORLDINFO_s *world) {
     kamino_e.intro = CutScene_Find(world->cutscene_sys, "Ep2_Kamino_Intro2");
 }
 
-void KaminoE_Update(WORLDINFO_s *) {
+void KaminoE_Update(WORLDINFO_s *world) {
+    if (kamino_e.reset_turrets != NULL && kamino_e.reset_turrets->value == 1.0f) {
+        kamino_e.hit_turret = NULL;
+        for (i32 i = 0; i < 4; i++) {
+            GizmoActivate(WORLD->gizmo_sys, GizmoFindByData(WORLD->gizmo_sys, gizpanel_gizmotype_id, kamino_e.panels[i]),
+                          1, 1);
+            kamino_e.turrets[i]->flags &= ~0x10;
+            kamino_e.turrets[i]->field_0x12e = 1;
+        }
+        kamino_e.reset_turrets->value = 0.0f;
+    }
+    if (netclient != 0)
+        return;
+    GameObject_s *jango = FindGameObject(id_JANGOFETT, 1, 1, 1, 0);
+    GameObject_s *spare = FindGameObject(id_JANGOFETT, 4, 1, 1, 0);
+    i32 connection_index = 0;
+    if (jango == NULL) {
+        jango = spare;
+    } else if (static_cast<i8>(jango->current_hp) <= 0) {
+        if (FreePlay != 0)
+            KillBossCompleteLevel(id_JANGOFETT, 0, 0.0f);
+        else
+            KillBossNewLevel(id_JANGOFETT, 0, 0.0f, KAMINOOUTRO_LDATA->idx);
+    }
+    if (kamino_e.fight->value == 0.0f && FreePlay == 0 && kamino_e.intro != NULL &&
+        instNuGCutSceneIsFinished(static_cast<instNUGCUTSCENE_s *>(kamino_e.intro->instance)) != 0)
+        kamino_e.fight->value = 1.0f;
+    if (kamino_e.hit_turret != NULL && (kamino_e.hit_turret->flags & 0x10) != 0)
+        kamino_e.hit_turret = NULL;
+
+    NUMTX *matrix = NuSpecialGetDrawMtx(&kamino_e.special);
+    NUVEC hover;
+    hover.x = 0.0f;
+    hover.y = 0.0f;
+    hover.z = 6.5f;
+    NuVecRotateX(&hover, &hover, kamino_e.orbit_pitch);
+    NuVecRotateY(&hover, &hover, kamino_e.orbit_yaw);
+    NuVecAdd(&hover, &hover, &kamino_e_centre);
+    kamino_e.elapsed += FRAMETIME;
+    // A slow bob and drift so the ship never sits perfectly still.
+    f32 spin = 360.0f * kamino_e.elapsed;
+    hover.y += (NU_SIN_LUT(spin / 3.0f * 182.04445f) + 1.0f) * 0.5f * 0.2f;
+    hover.z += (NU_SIN_LUT(0.25f * spin * 182.04445f) + 1.0f) * 0.5f * 0.2f;
+    if (kamino_e.mini_cut_started != NULL && kamino_e.mini_cut_started->value > 0.0f)
+        NuSpecialSetVisibility(&kamino_e.special, 1);
+    if (kamino_e.state != 0)
+        PlaySfx("Slave1_EngineLp", &kamino_e.position);
+    switch (kamino_e.state) {
+    case 0:
+        if (kamino_e.fight->value > 0.0f) {
+            kamino_e.state = 1;
+            kamino_e.timer = 0.0f;
+            GizObstacle_FindByName(world->giz_obstacle_sys, "slave1_debris");
+        }
+        kamino_e.position.y = -2.8f;
+        kamino_e.position.x = kamino_e_centre.x;
+        kamino_e.position.z = kamino_e_centre.z;
+        kamino_e.pitch = -0x4000;
+        kamino_e.yaw = 0;
+        kamino_e.orbit_pitch = -0xe38;
+        kamino_e.orbit_yaw = 0x4000;
+        break;
+    case 1: {
+        // Rise out of the pad over four seconds.
+        kamino_e.timer += FRAMETIME;
+        f32 blend;
+        if (kamino_e.timer >= 4.0f) {
+            kamino_e.timer = 0.0f;
+            kamino_e.state = 2;
+            blend = 1.0f;
+        } else {
+            blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
+        }
+        kamino_e.position.y = blend * hover.y + (1.0f - blend) * -2.8f;
+        break;
+    }
+    case 2:
+        kamino_e.timer += FRAMETIME;
+        if (kamino_e.timer >= 4.0f) {
+            kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
+            kamino_e.state = 3;
+            kamino_e.timer = 0.0f;
+        } else {
+            kamino_e.pitch = SeekRot(kamino_e.pitch, 0, kamino_e.timer);
+        }
+        break;
+    case 3:
+        kamino_e.timer += FRAMETIME;
+        if (kamino_e.timer >= 4.0f) {
+            kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
+            kamino_e.timer = 0.0f;
+            kamino_e.state = 4;
+        } else {
+            kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, kamino_e.timer);
+        }
+        kamino_e.pitch = SeekRot(kamino_e.pitch, 0, 4.0f);
+        break;
+    case 4: {
+        // Slide out to the orbit radius.
+        kamino_e.timer += FRAMETIME;
+        f32 blend;
+        if (kamino_e.timer >= 4.0f) {
+            kamino_e.timer = 0.0f;
+            kamino_e.state = 5;
+            blend = 1.0f;
+        } else {
+            blend = (NU_SIN_LUT((0.25f * kamino_e.timer * 180.0f - 90.0f) * 182.04445f) + 1.0f) * 0.5f;
+        }
+        kamino_e.position.x = hover.x * blend + kamino_e_centre.x * (1.0f - blend);
+        kamino_e.position.z = blend * hover.z + (1.0f - blend) * kamino_e_centre.z;
+        kamino_e.pitch = SeekRot(kamino_e.pitch, 0xb60, 4.0f);
+        kamino_e.yaw = SeekRot(kamino_e.yaw, 0xc000, 4.0f);
+        break;
+    }
+    case 5: {
+        NUVEC aim;
+        i32 pitch_target = 0xb60;
+        i32 yaw_target = 0xc000;
+        bool aiming = false;
+        if (kamino_e.hit_turret != NULL) {
+            aim = *NuSpecialGetDrawPos(&kamino_e.hit_turret->primary_anim_obj->special);
+            aim.y += 0.5f;
+            aiming = true;
+        } else if (kamino_e.can_fire->value == 1.0f) {
+            GameObject_s *target = NULL;
+            f32 nearest = 1000000000.0f;
+            for (i32 i = 0; i < 8; i++) {
+                GameObject_s *player = Player[i];
+                if (player != NULL && (player->apiobj.field_0x1f8 & 0x1001) == 0x1001 &&
+                    (player->apiobj.character_data->model_flags & 0x80000) == 0) {
+                    NUVEC offset;
+                    f32 distance = NuVecDistSqr(&player->apiobj.collision_position,
+                                                reinterpret_cast<NUVEC *>(&matrix->m30), &offset);
+                    if (nearest > distance) {
+                        nearest = distance;
+                        target = Player[i];
+                    }
+                }
+            }
+            if (target != NULL) {
+                aim.x = target->apiobj.collision_position.x;
+                aim.y = target->apiobj.field_0x218 + 0.1f;
+                aim.z = target->apiobj.collision_position.z;
+                aiming = true;
+            }
+        }
+        kamino_e.orbit_pitch = -0xe38;
+        if (!aiming) {
+            kamino_e.orbit_yaw = 0x4000;
+        } else {
+            // Orbit around to the side of the arena the target is on.
+            f32 lead = aim.z - kamino_e_centre.z;
+            if (lead > 2.5f)
+                lead = 2.5f;
+            else if (lead < -2.5f)
+                lead = -2.5f;
+            kamino_e.orbit_yaw = static_cast<i32>(lead / 2.5f * 30.0f * 182.04445f) + 0x4000;
+            NUVEC muzzle;
+            muzzle.x = 0.0f;
+            muzzle.y = -kamino_e_gunoffset[0].y;
+            muzzle.z = -kamino_e_gunoffset[0].z;
+            NuVecMtxRotate(&muzzle, &muzzle, matrix);
+            NuVecAdd(&muzzle, &muzzle, &aim);
+            NUVEC to_target;
+            NuVecSub(&to_target, &muzzle, &kamino_e.position);
+            yaw_target = static_cast<i32>(NuAtan2(to_target.x, to_target.z) * 10430.378f);
+            pitch_target = static_cast<i32>(
+                NuAtan2(-to_target.y, NuFsqrt(to_target.x * to_target.x + to_target.z * to_target.z)) * 10430.378f);
+            kamino_e.timer += FRAMETIME;
+            if (kamino_e.timer > 0.15f) {
+                kamino_e.timer = 0.0f;
+                NUVEC muzzle;
+                NUMTX bolt_matrix = *matrix;
+                NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
+                f32 range = NuVecDist(&muzzle, &aim, NULL);
+                NuMtxPreRotateY(&bolt_matrix,
+                                static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
+                addbolt_nosfx = 1;
+                BOLT_s *bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
+                if (bolt != NULL)
+                    bolt->flags_word |= 0x10;
+                kamino_e.gun = kamino_e.gun == 0;
+                bolt_matrix = *matrix;
+                NuVecMtxTransform(&muzzle, &kamino_e_gunoffset[kamino_e.gun], matrix);
+                NuMtxPreRotateY(&bolt_matrix,
+                                static_cast<i32>(NuAtan2(-kamino_e_gunoffset[kamino_e.gun].x, range) * 10430.378f));
+                addbolt_nosfx = 1;
+                bolt = Bolt_Add(NULL, &muzzle, &bolt_matrix, 0x27, 0x800);
+                if (bolt != NULL)
+                    bolt->flags_word |= 0x10;
+                kamino_e.gun = kamino_e.gun == 0;
+                PlaySfx("Kam_Slave1BlasterFire", &muzzle);
+            }
+            pitch_target = static_cast<u16>(pitch_target);
+            yaw_target = static_cast<u16>(yaw_target);
+        }
+        SeekVec(&kamino_e.position, &kamino_e.position, &hover, 1.0f);
+        kamino_e.pitch = SeekRot(kamino_e.pitch, pitch_target, 1.0f);
+        kamino_e.yaw = SeekRot(kamino_e.yaw, yaw_target, 1.0f);
+        break;
+    }
+    }
+    NuMtxSetTranslation(matrix, &kamino_e.position);
+    NuMtxPreRotateY(matrix, kamino_e.yaw);
+    NuMtxPreRotateX(matrix, kamino_e.pitch);
+    AISYS_s *ai_sys = world->ai_sys;
+    AIPATHCNX_s *bridge = static_cast<AIPATHCNX_s *>(
+        AIPAthFindPathCnx(ai_sys, reinterpret_cast<i32>(ai_sys->path_sys->paths), "Bridge1_a", "Bridge1_b",
+                          &connection_index));
+    AIAREA_s *fight_area = AISysFindArea(WORLD->ai_sys, "Fight");
+    if (bridge == NULL || jango == NULL || fight_area == NULL)
+        return;
+    // While the bridge is broken and Jango has left the fight area, put him
+    // back on the WAIT locator.
+    if (reinterpret_cast<i32 *>(bridge)[connection_index] >= 0 &&
+        reinterpret_cast<i32 *>(bridge)[connection_index == 0] >= 0)
+        return;
+    i64 mask = 1 << (fight_area - world->ai_sys->areas);
+    if (((jango->ai_area_mask_low & static_cast<u32>(mask)) |
+         (jango->ai_area_mask_high & static_cast<u32>(mask >> 32))) != 0)
+        return;
+    AILOCATOR_s *wait = AIPathFindLocator(world->ai_sys, "WAIT");
+    if (wait == NULL)
+        return;
+    jango->apiobj.position = wait->position;
+    jango->apiobj.facing_angle = static_cast<u16>(wait->flags);
+    jango->apiobj.movement_facing_angle = static_cast<u16>(wait->flags);
+    jango->apiobj.field_0x276 = static_cast<u16>(wait->flags);
+    jango->ai.path_info = wait->path_info;
+    jango->apiobj.collision_position = wait->position;
+    jango->apiobj.start_position = wait->position;
+    jango->apiobj.initial_position = wait->position;
+    jango->apiobj.last_safe_position = wait->position;
+    jango->apiobj.respawn_position = wait->position;
+    jango->ai_reset_position = wait->position;
+    plr_lastpos = wait->position;
+    jango->apiobj.velocity = v000;
+    InitSurfaceInfo(jango);
 }
 
 void KaminoE_AlwaysUpdate(WORLDINFO_s *) {
@@ -1070,8 +1315,8 @@ static i32 JediBInitLocator(WORLDINFO_s *world, NUVEC *position, i32 flags, AILO
     f32 height = GameShadow(NULL, position, 5.0f, 0);
     if (height != 2000000.0f)
         position->y = height;
-    AISysGetPathPos(world->ai_sys, position, &locator->path, 0, 0xff);
-    if ((locator->path_flags & 1) == 0)
+    AISysGetPathPos(world->ai_sys, position, &locator->path_info, 0, 0xff);
+    if (locator->path_info.on_path == 0)
         return 0;
     locator->position = *position;
     locator->flags = flags;

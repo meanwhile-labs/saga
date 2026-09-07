@@ -322,7 +322,7 @@ void *SetLevelHack(i32);
 void ResetLevel(WORLDINFO_s *, char *, i32);
 extern i32 BoltType_FindIDByName(char *, WORLDINFO_s *);
 extern BOLTTYPE_s *BoltType_FindByID(i32, WORLDINFO_s *);
-extern void Bolt_Add(GameObject_s *, nuvec_s *, numtx_s *, i32, i32);
+extern BOLT_s *Bolt_Add(GameObject_s *, nuvec_s *, numtx_s *, i32, i32);
 void TBOPENFN(char *, i32);
 void TBCLOSEFN(char *, i32);
 void InitMiniSnowTroopers(WORLDINFO_s *, i32, i32, i32);

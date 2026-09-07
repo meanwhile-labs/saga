@@ -115,7 +115,8 @@ void Bolt_ObjTargetPosYAdjust(GameObject_s *) {
 void BoltType_FindIDByCreature(GameObject_s *, i32) {
 }
 
-void Bolt_Add(GameObject_s *, nuvec_s *, numtx_s *, i32, i32) {
+BOLT_s *Bolt_Add(GameObject_s *, nuvec_s *, numtx_s *, i32, i32) {
+    return NULL;
 }
 
 void Bolt_End(BOLT_s *, i32) {

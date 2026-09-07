@@ -743,7 +743,8 @@ void GizmoSysReset(GIZMOSYS *gizmo_sys, void *world, i32 progress_index) {
     }
 }
 
-void GizmoFindByData(GIZMOSYS_s *, i32, void *) {
+GIZMO_s *GizmoFindByData(GIZMOSYS_s *, i32, void *) {
+    return NULL;
 }
 
 GIZMO *GizmoFindByName(GIZMOSYS *gizmo_sys, i32 type_id, char *name) {

@@ -897,9 +897,15 @@ typedef struct GameObject_s {
     void (*move_override)(GameObject_s *); // 0x10bc
     u8 pad_10c0[0x10c4 - 0x10c0];
     f32 ai_elapsed_time;                   // 0x10c4, accumulated until the next AI update
-    f32 field_0x10c8;                      // 0x10c8
-    f32 field_0x10cc;                      // 0x10cc
-    f32 field_0x10d0;                      // 0x10d0
+    union {
+        // Position the AI restores the character to after a forced move.
+        NUVEC ai_reset_position; // 0x10c8
+        struct {
+            f32 field_0x10c8; // 0x10c8
+            f32 field_0x10cc; // 0x10cc
+            f32 field_0x10d0; // 0x10d0
+        };
+    };
     f32 vertical_velocity;                 // 0x10d4
     GIZFORCE_s *gizforce_target;           // 0x10d8
     GAMEANIMOBJ_s *gizforce_target_object; // 0x10dc
