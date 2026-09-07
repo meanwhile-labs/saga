@@ -644,9 +644,12 @@ void SetProtocolDroidInterfaceAction(GameObject_s *) {
 }
 
 void SetProtocolDroidDeactivatedAction(GameObject_s *object) {
-    if (object->field_0xe38 == 3) object->context_animation = 0x42;
-    else if (object->field_0xe38 == 2) object->context_animation = 0x43;
-    else if (object->field_0xe38 == 1) object->context_animation = 0x44;
+    if (object->field_0xe38 == 3)
+        object->context_animation = 0x42;
+    else if (object->field_0xe38 == 2)
+        object->context_animation = 0x43;
+    else if (object->field_0xe38 == 1)
+        object->context_animation = 0x44;
 }
 
 void LoadPerm1() {

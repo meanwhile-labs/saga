@@ -57,8 +57,10 @@ static i32 RedirectTextFile(char *text, char *filename, i32 strip_comments) {
     NUFPAR *parser = NuFParCreateMem("redirect", text, 0xffff);
     if (parser != NULL) {
         while (NuFParGetLine(parser) != 0) {
-            if (strip_comments != 0 && Text_StripComments(parser->line_buf, parser->line_buf, 1) == 0) continue;
-            if (NuFParGetWord(parser) == 0) continue;
+            if (strip_comments != 0 && Text_StripComments(parser->line_buf, parser->line_buf, 1) == 0)
+                continue;
+            if (NuFParGetWord(parser) == 0)
+                continue;
             if (NuStrICmp(parser->word_buf, "txt_file") == 0) {
                 if (result == 0 && NuFParGetWord(parser) != 0 && NuStrLen(parser->word_buf) < 64) {
                     result = 1;
@@ -146,12 +148,14 @@ static i32 CharConfig(i32 character_id, char *directory, char *filename, VARIPTR
     if (parser != NULL) {
         NuFParPushCom2(parser, CharConfig_GetKeywords(), game_keywords);
         while (NuFParGetLine(parser) != 0) {
-            if (NuFParGetWord(parser) != 0) NuFParInterpretWord(parser);
+            if (NuFParGetWord(parser) != 0)
+                NuFParInterpretWord(parser);
         }
         NuFParDestroy(parser);
     }
     character->model_flags |= 1;
-    if ((charconfig.flags & 0xc) == 4) data->field_0x78 = data->turn_rate;
+    if ((charconfig.flags & 0xc) == 4)
+        data->field_0x78 = data->turn_rate;
     if ((charconfig.flags & 0x10) == 0 && (character->model_flags & 0x2000) != 0) {
         data->ai_update_distance_0 = vehicle_timebase_dist[0];
         data->ai_update_distance_1 = vehicle_timebase_dist[1];
@@ -163,7 +167,8 @@ static i32 CharConfig(i32 character_id, char *directory, char *filename, VARIPTR
         data->ai_update_interval_3 = static_cast<u8>(vehicle_timebase_nframes[3]);
     }
     CharConfig_CalculateJumpStats(data->jump_speed, data->gravity, &data->jump_duration, &data->jump_height);
-    CharConfig_CalculateJumpStats(data->second_jump_speed, data->gravity, &data->second_jump_duration, &data->second_jump_height);
+    CharConfig_CalculateJumpStats(data->second_jump_speed, data->gravity, &data->second_jump_duration,
+                                  &data->second_jump_height);
     if ((charconfig.flags & 0x20) != 0) {
         CHARACTERANIM_s *sentinel = &character->animations[charconfig.animation_count];
         character->field5_0x14 = charconfig.animation_count++;
@@ -197,7 +202,8 @@ static i32 CharConfig(i32 character_id, char *directory, char *filename, VARIPTR
             arena->addr += 32;
             for (i32 bit = 0; bit < 32; ++bit) {
                 for (i32 layer = 0; layer < data->layer_count; ++layer) {
-                    if (data->layers[layer].mask_bit == bit) data->layer_lookup[bit] = static_cast<i8>(layer);
+                    if (data->layers[layer].mask_bit == bit)
+                        data->layer_lookup[bit] = static_cast<i8>(layer);
                 }
             }
         }
@@ -215,7 +221,8 @@ void CharConfig_ConfigureAll(i32 permanent, NUFPCOMJMP *game_keywords) {
         pak = NuFilePakLoad("chars\\charstxt.fpk", &cursor, superbuffer_end, 4);
     }
     for (i32 id = 0; id < CHARCOUNT; ++id) {
-        if (permanent == 0 && apicharsys->playermodelids[id] == -1) continue;
+        if (permanent == 0 && apicharsys->playermodelids[id] == -1)
+            continue;
         CHARACTERDATA *character = &CDataList[id];
         char directory[256];
         char filename[256];
@@ -241,13 +248,15 @@ void CharConfig_ConfigureAll(i32 permanent, NUFPCOMJMP *game_keywords) {
         i32 item = NuFilePakGetItem(pak, path);
         void *address;
         i32 size;
-        if (item == 0 || NuFilePakGetItemInfo(pak, item, &address, &size) == 0 || size < 1) continue;
+        if (item == 0 || NuFilePakGetItemInfo(pak, item, &address, &size) == 0 || size < 1)
+            continue;
         char *text = static_cast<char *>(address);
         char saved = text[size];
         text[size] = 0;
         i32 length = Text_StripComments(text, ConfigBuffer, 1);
         text[size] = saved;
-        if (length < 1) continue;
+        if (length < 1)
+            continue;
         i32 redirected = RedirectTextFile(text, filename, 1);
         if (redirected != 0) {
             NuStrCat(filename, ".txt");
@@ -257,19 +266,22 @@ void CharConfig_ConfigureAll(i32 permanent, NUFPCOMJMP *game_keywords) {
             if (item == 0 || NuFilePakGetItemInfo(pak, item, &address, &size) == 0) {
                 redirected = 0;
             } else {
-                if (size < 1) continue;
+                if (size < 1)
+                    continue;
                 text = static_cast<char *>(address);
                 saved = text[size];
                 text[size] = 0;
                 length = Text_StripComments(text, ConfigBuffer, 1);
                 text[size] = saved;
-                if (length < 1) continue;
+                if (length < 1)
+                    continue;
             }
         }
         CharConfig(id, NULL, NULL, &permbuffer_ptr, &permbuffer_end, 1, ConfigBuffer, length, 0, game_keywords);
         if (redirected == 2) {
             item = NuFilePakGetItem(pak, original_path);
-            if (item == 0 || NuFilePakGetItemInfo(pak, item, &address, &size) == 0 || size < 1) continue;
+            if (item == 0 || NuFilePakGetItemInfo(pak, item, &address, &size) == 0 || size < 1)
+                continue;
             text = static_cast<char *>(address);
             saved = text[size];
             text[size] = 0;
@@ -286,7 +298,8 @@ void CharConfig_ConfigureAll(i32 permanent, NUFPCOMJMP *game_keywords) {
 void CharConfig_CalculateJumpStats(float jump_speed, float gravity, float *duration, float *height) {
     f32 ascent_time = 0.0f;
     const f32 downward_speed = 0.0f - jump_speed;
-    if (gravity != 0.0f && downward_speed != 0.0f) ascent_time = downward_speed / gravity;
+    if (gravity != 0.0f && downward_speed != 0.0f)
+        ascent_time = downward_speed / gravity;
     if (duration != NULL) {
         *duration = ascent_time + ascent_time;
     }

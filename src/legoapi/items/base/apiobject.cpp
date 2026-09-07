@@ -101,8 +101,8 @@ extern "C" {
         }
     }
 
-    void StoreLocatorCoordinates(CHARACTERMODEL_s *model, NUMTX *world_matrix, NUMTX *joint_matrices,
-                                 NUVEC *positions, NUMTX *matrices) {
+    void StoreLocatorCoordinates(CHARACTERMODEL_s *model, NUMTX *world_matrix, NUMTX *joint_matrices, NUVEC *positions,
+                                 NUMTX *matrices) {
         if (positions != NULL || matrices != NULL) {
             for (i32 index = 0; index < 16; ++index) {
                 if (model->points_of_interest[index] != NULL) {

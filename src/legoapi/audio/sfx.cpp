@@ -243,7 +243,8 @@ extern "C" {
     }
 
     void SetSfxBit_On(i32 sound) {
-        if (sound >= 0) SetSfxBit_OnEx(g_soundInfo[sound].index);
+        if (sound >= 0)
+            SetSfxBit_OnEx(g_soundInfo[sound].index);
     }
 
     void SfxBit(void) {

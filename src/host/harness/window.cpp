@@ -970,14 +970,14 @@ i32 host_run_window(const HostWindowOptions &options) {
                              scripted_action_active.player_context, scripted_action_active.context_animation,
                              scripted_action_active.queued_context_animation, scripted_action_active.animation_current,
                              scripted_action_active.animation_requested, scripted_action_active.animation_flags);
-                    const GAMECHARACTERDATA *weapon_data = static_cast<const GAMECHARACTERDATA *>(
-                        Player[0]->apiobj.character_data->field11_0x24);
+                    const GAMECHARACTERDATA *weapon_data =
+                        static_cast<const GAMECHARACTERDATA *>(Player[0]->apiobj.character_data->field11_0x24);
                     LOG_INFO("scripted weapon: scale=%.3f model=%d joints=(%d,%d,%d,%d) color=%u flags=0x%x "
                              "models-active=(hilt=%u,green=%u,blue=%u)",
                              Player[0]->weapon_scale, weapon_data->weapon_model, weapon_data->weapon_joints[0],
-                             weapon_data->weapon_joints[1], weapon_data->weapon_joints[2], weapon_data->weapon_joints[3],
-                             weapon_data->field_0x117, weapon_data->field_0x94, WORLD->lev_objs[0x11].active,
-                             WORLD->lev_objs[0x67].active, WORLD->lev_objs[0x69].active);
+                             weapon_data->weapon_joints[1], weapon_data->weapon_joints[2],
+                             weapon_data->weapon_joints[3], weapon_data->field_0x117, weapon_data->field_0x94,
+                             WORLD->lev_objs[0x11].active, WORLD->lev_objs[0x67].active, WORLD->lev_objs[0x69].active);
                     scripted_stage = HostScriptedInputStage::action_wait_release;
                     scripted_stage_ticks = elapsed_ticks;
                 } else if (elapsed_ticks >= scripted_stage_ticks + host_scripted_action_entry_timeout_ms) {
