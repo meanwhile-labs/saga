@@ -251,7 +251,7 @@ void BountyHunterPursuitD_Reset(WORLDINFO_s *world) {
     LevGameObject[0] = GetNamedGameObject(world->ai_sys, "ai_zam");
 }
 
-static inline void UpdateZamArrow(WORLDINFO_s *world) {
+static void UpdateZamArrow(WORLDINFO_s *world) {
     GameObject_s *target = zamarrow.target;
     if (target == NULL || (target->apiobj.field_0x1f8 & 0x1000) == 0 || target->apiobj.field_0x287 != 0)
         return;
@@ -259,23 +259,23 @@ static inline void UpdateZamArrow(WORLDINFO_s *world) {
         zamarrow.anim_time = 0.0f;
         return;
     }
-    f32 next = zamarrow.anim_time + FRAMETIME * 2.0f;
-    zamarrow.anim_time = next > 1.0f ? 1.0f : next;
-    if (!(NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f))
-        return;
-
-    NUVEC position = zamarrow.target->apiobj.upper_position;
-    position.y += 1.0f;
-    GAMEMESSAGE_s *message = static_cast<GAMEMESSAGE_s *>(
-        AddGameMessage(" ", &position, 0.05f, NULL, 0.0f, 0xff, 0x3f, 0x3f, 0x10083, 0.0f));
-    if (message == NULL)
-        return;
-    message->icon = 0x134;
-    i32 phase = static_cast<i32>(16384.0f * zamarrow.anim_time) >> 1;
-    message->alpha = static_cast<u8>(128.0f * NuTrigTable[phase & 0x7fff]);
-    const u8 *state = reinterpret_cast<const u8 *>(world->lev_objs);
-    if (state[0x134e] != 0)
-        memcpy(&message->color1, state + 0x1340, 3 * sizeof(u32));
+    zamarrow.anim_time += FRAMETIME * 2.0f;
+    if (zamarrow.anim_time > 1.0f)
+        zamarrow.anim_time = 1.0f;
+    if (NuFmod(GameTimer.time_elapsed_mod_seconds, 0.2f) < 0.1f) {
+        NUVEC position = zamarrow.target->apiobj.upper_position;
+        position.y += 1.0f;
+        GAMEMESSAGE_s *message = static_cast<GAMEMESSAGE_s *>(
+            AddGameMessage(" ", &position, 0.05f, NULL, 0.0f, 0xff, 0x3f, 0x3f, 0x10083, 0.0f));
+        if (message != NULL) {
+            message->icon = 0x134;
+            i32 phase = static_cast<i32>(16384.0f * zamarrow.anim_time) >> 1;
+            message->alpha = static_cast<u8>(128.0f * NuTrigTable[phase & 0x7fff]);
+            const u8 *state = reinterpret_cast<const u8 *>(world->lev_objs);
+            if (state[0x134e] != 0)
+                memcpy(&message->color1, state + 0x1340, 3 * sizeof(u32));
+        }
+    }
 }
 
 void BountyHunterPursuitA_Update(WORLDINFO_s *world) {
@@ -308,9 +308,9 @@ void BountyHunterPursuitC_Update(WORLDINFO_s *world) {
     TRAFFICANIM_s *anim = traffic->anims;
     for (i32 i = 0; i < traffic->anim_count; i++, anim++) {
         if (test_z > player->apiobj.position.z)
-            reinterpret_cast<i8 *>(anim)[0x139] = anim->side == 1;
+            anim->hidden = anim->side == 1;
         else
-            reinterpret_cast<i8 *>(anim)[0x139] = anim->side == -1;
+            anim->hidden = anim->side == -1;
     }
 }
 
@@ -1170,13 +1170,11 @@ void DookuC_Reset(WORLDINFO_s *world) {
     dooku_c.node.scene = NULL;
     dooku_c.node.special = NULL;
     dooku_c.node.display_special = NULL;
-    i32 client = netclient;
-
-    if (client == 0) {
-        dooku_c.total = SetGizAIMessage(gizaimessagesys, "dooku_total", 0.0f, NULL);
-        dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "dooku_hits", NULL);
+    if (netclient == 0) {
+        dooku_c.total = SetGizAIMessage(gizaimessagesys, "DookuFight", 0.0f, NULL);
+        dooku_c.hits = CheckGizAIMessage(gizaimessagesys, "ShowHearts", NULL);
     }
-    NuSpecialFind(world->current_gscn, &dooku_c.node, "dooku_node", 1);
+    NuSpecialFind(world->current_gscn, &dooku_c.node, "dooku_force", 1);
 }
 
 // The three force towers form a stack; while it is complete the AI path runs

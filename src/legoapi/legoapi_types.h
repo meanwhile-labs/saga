@@ -1985,13 +1985,17 @@ struct TRAFFICANIM_s {
     nuhspecial_s special; // 0x00
     char filler_0x0c[0x4];
     f32 anim_time; // 0x10
-    char filler_0x14[0x126];
+    char filler_0x14[0x125];
+    // Set while this anim sits on the camera's own side of traffic_test_z, so
+    // the pursuit can hide it.
+    i8 hidden; // 0x139
     // Which side of traffic_test_z this anim sits on: -1, 0 or 1.
     i8 side; // 0x13a
     char filler_0x13b[0x5];
 };
 DECOMP_ASSERT(sizeof(TRAFFICANIM_s) == 0x140, "TRAFFICANIM_s size");
 DECOMP_ASSERT(offsetof(TRAFFICANIM_s, anim_time) == 0x10, "TRAFFICANIM_s anim_time offset");
+DECOMP_ASSERT(offsetof(TRAFFICANIM_s, hidden) == 0x139, "TRAFFICANIM_s hidden offset");
 DECOMP_ASSERT(offsetof(TRAFFICANIM_s, side) == 0x13a, "TRAFFICANIM_s side offset");
 // Allocated as one 0x77e4-byte block by TrafficAnimSys_Configure.
 struct TRAFFICANIMSYS_s {
