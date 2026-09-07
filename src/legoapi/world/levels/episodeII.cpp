@@ -6,6 +6,7 @@
 #include "legoapi/world/level.h"
 #include "globals.h"
 #include "legoapi/characters/core/players.h"
+#include "legoapi/characters/motion.h"
 #include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
 #include "legoapi/gizmo/base/GizForceObjectInterface.h"
@@ -55,6 +56,10 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 extern "C" {
     void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
     float FactoryBConveyorStopFrame = 28.0f;
+    // Gunship_B drag-bomb seek tuning.
+    f32 gunshipb_seekmomseek = 5.0f;
+    f32 gunshipb_seekmom = 5.0f;
+    f32 gunshipb_seekrange = 4.0f;
     struct KAMINOC_NETPACKET_s *kaminoc_netpacket;
     void *disco_off_spina[3];
     nuhspecial_s disco_on_spin[3];
@@ -1022,7 +1027,38 @@ i32 GunshipInLevel(LEVELDATA_s *level) {
     return BONUS_GUNSHIPA_LDATA == level;
 }
 
-void GunShip_DragBombSeekBlowUp(GameObject_s *) {
+// Nudges a dragged bomb toward the nearest armed blow-up gizmo, easing harder
+// the closer it already is.
+void GunShip_DragBombSeekBlowUp(GameObject_s *object) {
+    if (object->character_context != 0x34)
+        return;
+    f32 nearest_distance = gunshipb_seekrange * gunshipb_seekrange;
+    GIZMOBLOWUP_s *nearest = NULL;
+    NUVEC candidate_offset;
+    NUVEC offset;
+    NUVEC direction;
+    for (i32 i = 0; i < 8; i++) {
+        if (LevGizmo[i] != NULL) {
+            GIZMOBLOWUP_s *blowup = static_cast<GIZMOBLOWUP_s *>(LevGizmo[i]->object);
+            if (blowup != NULL && (blowup->status_flags & 0x800001) == 0x800000) {
+                f32 distance = NuVecDistSqr(&blowup->mid_position, &object->apiobj.collision_position,
+                                            &candidate_offset);
+                if (distance < nearest_distance) {
+                    nearest_distance = distance;
+                    offset = candidate_offset;
+                    nearest = blowup;
+                }
+            }
+        }
+    }
+    if (nearest == NULL)
+        return;
+    NuVecNorm(&direction, &offset);
+    f32 pull = (1.0f - NuFsqrt(nearest_distance) / gunshipb_seekrange) * gunshipb_seekmom;
+    direction.x *= pull;
+    direction.z *= pull;
+    object->apiobj.velocity.x = SeekValF(object->apiobj.velocity.x, direction.x, gunshipb_seekmomseek);
+    object->apiobj.velocity.z = SeekValF(object->apiobj.velocity.z, direction.z, gunshipb_seekmomseek);
 }
 
 // ===========================================================================
