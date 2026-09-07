@@ -1603,17 +1603,17 @@ void JediB_Update(WORLDINFO_s *world) {
     if (4.0f > jedi_b.timer) {
         if (player != NULL) {
             u8 slot = player->apiobj.field_0x289;
-            u32 high = static_cast<u32>((slot & 0x20) != 0) << slot;
-            u32 low = static_cast<u32>((slot & 0x20) == 0) << slot;
+            u32 high = ((slot & 0x20) != 0) << slot;
+            u32 low = ((slot & 0x20) == 0) << slot;
             jedi_b.mask_high = high;
             jedi_b.mask_low = low;
         }
         if (player2 != NULL) {
             u8 slot = player2->apiobj.field_0x289;
-            u32 high = static_cast<u32>((slot & 0x20) != 0) << slot;
-            u32 low = static_cast<u32>((slot & 0x20) == 0) << slot;
-            jedi_b.mask_high |= high;
+            u32 high = static_cast<u32>((slot >> 5) & 1) << slot;
+            u32 low = static_cast<u32>(((slot >> 5) & 1) ^ 1) << slot;
             jedi_b.mask_low |= low;
+            jedi_b.mask_high |= high;
         }
     } else if (jedi_b.stage == 7) {
         if (jedi_b.boss != NULL) {
@@ -1634,8 +1634,8 @@ void JediB_Update(WORLDINFO_s *world) {
                 player->apiobj.collision_position.z * player->apiobj.collision_position.z >
             safe) {
             u8 slot = player->apiobj.field_0x289;
-            high = static_cast<u32>((slot & 0x20) != 0) << slot;
-            low = static_cast<u32>((slot & 0x20) == 0) << slot;
+            high = ((slot & 0x20) != 0) << slot;
+            low = ((slot & 0x20) == 0) << slot;
             jedi_b.mask_high = high;
             jedi_b.mask_low = low;
         }
@@ -1658,8 +1658,8 @@ void JediB_Update(WORLDINFO_s *world) {
                 object->field_0xec8 = 0;
                 if (static_cast<i8>(object->apiobj.field_0x1f8) < 0) {
                     u8 slot = jedi_b.boss->apiobj.field_0x289;
-                    u32 high = static_cast<u32>((slot & 0x20) != 0) << slot;
-                    u32 low = static_cast<u32>((slot & 0x20) == 0) << slot;
+                    u32 high = ((slot & 0x20) != 0) << slot;
+                    u32 low = ((slot & 0x20) == 0) << slot;
                     object->field_0xec8 = high;
                     object->field_0xec4 = low;
                 }
