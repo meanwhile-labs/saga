@@ -787,21 +787,26 @@ void MultilineDump(char const *) {
 void GetMatchLength(unsigned char *, unsigned char *, abi_ulong) {
 }
 i32 MakeLayerList_Name(CHARACTERMODEL_s *model, i16 *output, u32 mask) {
-    if (output == NULL || model == NULL) return 0;
+    if (output == NULL || model == NULL)
+        return 0;
     GAMECHARACTERDATA_s *data = &GCDataList[model->model_id];
     i32 count = 0;
     u32 flag = 1;
     for (i32 bit = 0; bit < 32; ++bit, flag <<= 1) {
-        if ((mask & flag) == 0 || bit >= data->layer_count) continue;
+        if ((mask & flag) == 0 || bit >= data->layer_count)
+            continue;
         i32 layer;
         if (data->layer_lookup == NULL) {
             for (layer = 0; layer < data->layer_count; ++layer) {
-                if (data->layers[layer].mask_bit == bit) break;
+                if (data->layers[layer].mask_bit == bit)
+                    break;
             }
-            if (layer == data->layer_count) continue;
+            if (layer == data->layer_count)
+                continue;
         } else {
             layer = data->layer_lookup[bit];
-            if (layer == -1) continue;
+            if (layer == -1)
+                continue;
         }
         const i16 hierarchy_layer = data->layers[layer].hierarchy_layer_index;
         if (hierarchy_layer != -1) {

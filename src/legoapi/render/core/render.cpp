@@ -741,7 +741,8 @@ static NUGSCN *NuReadGraphicsData(VARIPTR *buf, VARIPTR *buf_end, char *path, NU
         u32 animation_texture_count = 0;
         for (i32 i = 0; i < fixed_scene->num_texture_anims; ++i) {
             u32 end = reinterpret_cast<usize>(animations[i].texture_ids) + animations[i].texture_count;
-            if (animation_texture_count < end) animation_texture_count = end;
+            if (animation_texture_count < end)
+                animation_texture_count = end;
         }
         for (u32 i = 0; i < animation_texture_count; ++i) {
             fixed_scene->texture_anim_ids[i] = fixed_scene->texture_ids[fixed_scene->texture_anim_ids[i]];
@@ -864,10 +865,8 @@ void DrawStreaks() {
 void Draw_LOADED() {
 }
 
-void Draw3DObject(WORLDINFO_s *world, i32 object_index, nuvec_s *position,
-                                                           u16 x_rotation, u16 y_rotation, u16 z_rotation,
-                                                           float scale_x, float scale_y, float scale_z,
-                                                           i32 rotate_order) {
+void Draw3DObject(WORLDINFO_s *world, i32 object_index, nuvec_s *position, u16 x_rotation, u16 y_rotation,
+                  u16 z_rotation, float scale_x, float scale_y, float scale_z, i32 rotate_order) {
     if (object_index == -1) {
         return;
     }
@@ -965,10 +964,10 @@ void DrawQuestion(nuvec_s *, float, float) {
 void DrawRectRGBA(float, float, float, float, u32, numtl_s *, i32, float) {
 }
 
-void DrawItem(nuhspecial_s *special, nuvec_s *position, float scale_value,
-                                                       float unused, float y_push, u16 x_rot, u16 y_rot, u16 z_rot);
-static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush,
-                                                         u16 xrot, u16 yrot, u16 zrot);
+void DrawItem(nuhspecial_s *special, nuvec_s *position, float scale_value, float unused, float y_push, u16 x_rot,
+              u16 y_rot, u16 z_rot);
+static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush, u16 xrot, u16 yrot,
+                               u16 zrot);
 
 void DrawSubItems() {
     /* The sub-shelf is laid out as seven positions, with the centre position
@@ -1137,8 +1136,8 @@ void DrawSubItems() {
     }
 }
 
-static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush,
-                                                         u16 xrot, u16 yrot, u16 zrot) {
+static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush, u16 xrot, u16 yrot,
+                               u16 zrot) {
     const bool top_shelf_character = item == &TopShelf[1];
     if (top_shelf_character) {
         const f32 cycle_length = static_cast<f32>(SHOPCHARCOUNT) * 0.2f;
@@ -1688,12 +1687,9 @@ void DrawGameMessages() {
             if (message->update_fn != NULL) {
                 message->update_fn(reinterpret_cast<GAMEMESSAGE_s *>(message));
             }
-            position.x =
-                position.x + (message->target_position.x - position.x) * progress;
-            position.y =
-                position.y + (message->target_position.y - position.y) * progress;
-            position.z =
-                position.z + (message->target_position.z - position.z) * progress;
+            position.x = position.x + (message->target_position.x - position.x) * progress;
+            position.y = position.y + (message->target_position.y - position.y) * progress;
+            position.z = position.z + (message->target_position.z - position.z) * progress;
         }
         if ((message->flags & 0x20) != 0) {
             scale += (message->target_scale - scale) * progress;
@@ -1792,10 +1788,8 @@ void DrawStatusScreen(WORLDINFO_s *) {
 void Draw_LOADCORRUPT() {
 }
 
-void Draw3DObjectAlpha(WORLDINFO_s *world, i32 object_index, nuvec_s *position,
-                                                                u16 x_rotation, u16 y_rotation, u16 z_rotation,
-                                                                float scale_x, float scale_y, float scale_z,
-                                                                i32 rotate_order, float alpha) {
+void Draw3DObjectAlpha(WORLDINFO_s *world, i32 object_index, nuvec_s *position, u16 x_rotation, u16 y_rotation,
+                       u16 z_rotation, float scale_x, float scale_y, float scale_z, i32 rotate_order, float alpha) {
     if (object_index == -1) {
         return;
     }
@@ -2163,10 +2157,12 @@ void DrawGameMessage_Targets(GAMEMESSAGE_s *, nuvec_s *, float) {
 void DrawTorpedoTargetSprite(void *, unsigned char, float) {
 }
 
-i32 DrawPanel3DObjectNoAlpha(float x, float y, float z, float scale_x, float scale_y, float scale_z,
-                            u16 rotate_x, u16 rotate_y, u16 rotate_z, nuhspecial_s *special, i32 rotate_order) {
-    if (special == NULL || NuSpecialExistsFn(special) == 0) return 0;
-    if (scale_y == 0.0f && scale_x == 0.0f && scale_z == 0.0f) return 0;
+i32 DrawPanel3DObjectNoAlpha(float x, float y, float z, float scale_x, float scale_y, float scale_z, u16 rotate_x,
+                             u16 rotate_y, u16 rotate_z, nuhspecial_s *special, i32 rotate_order) {
+    if (special == NULL || NuSpecialExistsFn(special) == 0)
+        return 0;
+    if (scale_y == 0.0f && scale_x == 0.0f && scale_z == 0.0f)
+        return 0;
     NUVEC scale = {scale_x / CameraZoom, scale_y / CameraZoom, scale_z / CameraZoom};
     NUMTX matrix;
     NuMtxSetScale(&matrix, &scale);
@@ -2185,8 +2181,8 @@ void DrawPanel3DObjectMtxNoAlpha(nuhspecial_s *, numtx_s *) {
 void Draw_OK(MENU_s *) {
 }
 
-void DrawItem(nuhspecial_s *special, nuvec_s *position, float scale_value,
-                                                       float, float y_push, u16 x_rot, u16 y_rot, u16 z_rot) {
+void DrawItem(nuhspecial_s *special, nuvec_s *position, float scale_value, float, float y_push, u16 x_rot, u16 y_rot,
+              u16 z_rot) {
     if (position != NULL) {
         if (NuSpecialExistsFn(special) != 0) {
             NUANGVEC rotation = {x_rot, y_rot, z_rot};
@@ -2391,8 +2387,8 @@ static __used__ bool MatrixReflection_CanOverride() {
 static __used__ void DrawStarFighter(starfighter_s *) {
 }
 
-static void DrawWeapon_SetSabreObjects(GameObject_s *object, i32 red, i32 green, i32 blue, i32 purple,
-                                      i32 *models, i32 *hilt) {
+static void DrawWeapon_SetSabreObjects(GameObject_s *object, i32 red, i32 green, i32 blue, i32 purple, i32 *models,
+                                       i32 *hilt) {
     if (red || green || blue || purple) {
         if (object->id == id_DARTHMAUL) {
             *hilt = models[0] = 0x12;
@@ -2487,8 +2483,8 @@ static void DrawWeapons(GameObject_s *object, i32 reflection, f32 weapon_scale) 
                             } else if (color == 1 && object->id == id_GRIEVOUS && (hand == 0 || hand == 3)) {
                                 color = 2;
                             }
-                            DrawWeapon_SetSabreObjects(object, color == 0, color == 1, color == 2, color == 3,
-                                                       models, &hilt);
+                            DrawWeapon_SetSabreObjects(object, color == 0, color == 1, color == 2, color == 3, models,
+                                                       &hilt);
                             sabre = true;
                         }
                     }
@@ -2535,7 +2531,7 @@ static void DrawWeapons(GameObject_s *object, i32 reflection, f32 weapon_scale) 
                 }
                 NuMtxPreScale(&blade_matrix, &scale);
                 const NUMTX saved_matrix = blade_matrix;
-                for (i32 side = 0; ; ++side) {
+                for (i32 side = 0;; ++side) {
                     for (i32 part = 0; part < 4; ++part) {
                         if (models[part] == -1 || (side && models[part] == hilt)) {
                             continue;

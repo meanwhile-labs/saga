@@ -22,8 +22,7 @@ i32 LEGOCONTEXT_SPECIALMOVE_ATTACKER = -1;
 i32 LEGOCONTEXT_SPECIALMOVE_VICTIM = -1;
 
 i32 SpecialMove_Check(GameObject_s *attacker, GameObject_s *victim) {
-    if (SpecialMove != NULL &&
-        ((attacker->apiobj.flags_low & 0x80) == 0 || attacker->field_0xda8 <= 0.0f) &&
+    if (SpecialMove != NULL && ((attacker->apiobj.flags_low & 0x80) == 0 || attacker->field_0xda8 <= 0.0f) &&
         LEGOCONTEXT_SPECIALMOVE_ATTACKER != -1 && LEGOCONTEXT_SPECIALMOVE_VICTIM != -1) {
         for (i32 i = 0; i < SpecialMoveCount; ++i) {
             SPECIALMOVE_s *move = &SpecialMove[i];
@@ -36,7 +35,8 @@ i32 SpecialMove_Check(GameObject_s *attacker, GameObject_s *victim) {
                  (move->victim_action_type != -1 && move->victim_action_type == v->field275_0x116)) &&
                 victim->apiobj.character_model->model_data_b[move->victim_animation] != NULL &&
                 ((victim->apiobj.flags_low & 0x80) == 0 ||
-                 (victim->spawn_protection_timer <= 0.0f && (victim->field_0xefe & 0x40) == 0))) return i;
+                 (victim->spawn_protection_timer <= 0.0f && (victim->field_0xefe & 0x40) == 0)))
+                return i;
         }
     }
     return -1;
@@ -46,7 +46,8 @@ void SpecialMove_Cancel(GameObject_s *) {
 }
 
 u32 SpecialMove_GetFlags(i32 index, u32 mask) {
-    if (index == -1) return 0;
+    if (index == -1)
+        return 0;
     u32 flags = SpecialMove[index].flags;
     return mask == 0 ? flags : flags & mask;
 }

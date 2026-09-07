@@ -592,12 +592,14 @@ i16 InsidePolLines(f32 point_x, f32 point_y, f32 point_z, f32 edge_a_x, f32 edge
 }
 
 u16 ObjHitObj_Flags(GameObject_s *object) {
-    if (object == NULL) return 0;
+    if (object == NULL)
+        return 0;
     const bool player = (object->apiobj.flags_low & 0x80) != 0;
     const u16 ordinary = player ? 0x80c : 0x00a;
     const u16 special = player ? 0x824 : 0x022;
     const u16 scripted = player ? 0x804 : 0x002;
-    if ((object->apiobj.field_0x1f4 & 0x10001) != 0) return scripted | 0x10;
+    if ((object->apiobj.field_0x1f4 & 0x10001) != 0)
+        return scripted | 0x10;
     return (object->apiobj.field_0x1f4 & 4) != 0 ? special : ordinary;
 }
 
