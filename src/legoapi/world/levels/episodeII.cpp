@@ -1689,7 +1689,7 @@ void JediB_Update(WORLDINFO_s *world) {
                             break;
                         if (g_lowEndLevelBehaviour != 0 && jedi_b.active_count == 5)
                             break;
-                        char name[0x20];
+                        char name[0x10];
                         sprintf(name, "phase%d_%d", jedi_b.stage, jedi_b.active_count + 1);
                         AILOCATOR_s *locator = AIPathFindLocator(world->ai_sys, name);
                         if (locator == NULL)
