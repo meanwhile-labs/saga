@@ -1592,30 +1592,7 @@ void JediB_Update(WORLDINFO_s *world) {
     // Which party slots the arena creatures are allowed to target.
     jedi_b.mask_low = 0;
     jedi_b.mask_high = 0;
-    if (!(4.0f > jedi_b.timer) && jedi_b.stage != 7) {
-        f32 safe = jedib_safe_r * jedib_safe_r;
-        u32 low = 0;
-        u32 high = 0;
-        if (player->apiobj.collision_position.x * player->apiobj.collision_position.x +
-                player->apiobj.collision_position.z * player->apiobj.collision_position.z >
-            safe) {
-            u8 slot = player->apiobj.field_0x289;
-            high = static_cast<u32>((slot & 0x20) != 0) << slot;
-            low = static_cast<u32>((slot & 0x20) == 0) << slot;
-            jedi_b.mask_high = high;
-            jedi_b.mask_low = low;
-        }
-        if (player2 != NULL &&
-            player2->apiobj.collision_position.x * player2->apiobj.collision_position.x +
-                    player2->apiobj.collision_position.z * player2->apiobj.collision_position.z >
-                safe) {
-            u8 slot = player2->apiobj.field_0x289;
-            u32 bit_high = static_cast<u32>((slot >> 5) & 1) << slot;
-            u32 bit_low = static_cast<u32>(((slot >> 5) & 1) ^ 1) << slot;
-            jedi_b.mask_low = low | bit_low;
-            jedi_b.mask_high = high | bit_high;
-        }
-    } else if (4.0f > jedi_b.timer) {
+    if (4.0f > jedi_b.timer) {
         if (player != NULL) {
             u8 slot = player->apiobj.field_0x289;
             u32 high = static_cast<u32>((slot & 0x20) != 0) << slot;
@@ -1640,6 +1617,29 @@ void JediB_Update(WORLDINFO_s *world) {
             u32 low = static_cast<u32>(((slot >> 5) & 1) ^ 1) << slot;
             jedi_b.mask_high = high;
             jedi_b.mask_low = low;
+        }
+    } else {
+        f32 safe = jedib_safe_r * jedib_safe_r;
+        u32 low = 0;
+        u32 high = 0;
+        if (player->apiobj.collision_position.x * player->apiobj.collision_position.x +
+                player->apiobj.collision_position.z * player->apiobj.collision_position.z >
+            safe) {
+            u8 slot = player->apiobj.field_0x289;
+            high = static_cast<u32>((slot & 0x20) != 0) << slot;
+            low = static_cast<u32>((slot & 0x20) == 0) << slot;
+            jedi_b.mask_high = high;
+            jedi_b.mask_low = low;
+        }
+        if (player2 != NULL &&
+            player2->apiobj.collision_position.x * player2->apiobj.collision_position.x +
+                    player2->apiobj.collision_position.z * player2->apiobj.collision_position.z >
+                safe) {
+            u8 slot = player2->apiobj.field_0x289;
+            u32 bit_high = static_cast<u32>((slot >> 5) & 1) << slot;
+            u32 bit_low = static_cast<u32>(((slot >> 5) & 1) ^ 1) << slot;
+            jedi_b.mask_low = low | bit_low;
+            jedi_b.mask_high = high | bit_high;
         }
     }
 
