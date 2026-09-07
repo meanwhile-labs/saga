@@ -24,12 +24,15 @@
 #include "legoapi/legoapi_types.h"
 #include "legoapi/menus/core/gamemessage.h"
 #include "legoapi/world/levels/levels.h"
+#include "legoapi/world/mission.h"
 #include "legoapi/render/core/render.h"
 #include "nu2api/nucore/nugcutscene.h"
 #include "nu2api/nu3d/nuspecial.h"
+#include "nu2api/nu3d/nuspline.h"
 #include "nu2api/nu3d/nutex.h"
 #include "nu2api/numath/nufloat.h"
 #include "nu2api/numath/numtx.h"
+#include "nu2api/numath/nuang.h"
 #include "nu2api/numath/nurand.h"
 #include "nu2api/numath/nutrig.h"
 // This level's view of the shared 16-byte LevFlag scratch. byte0 holds the
@@ -56,6 +59,22 @@ extern struct GUNSHIP_LEVFLAG_s LevFlag;
 extern "C" {
     void *AIPAthFindPathCnx(AISYS_s *, i32, char *, char *, void *); // legoapi/ai pathfinding
     float FactoryBConveyorStopFrame = 28.0f;
+    // Jedi_B arena tuning.
+    f32 jedib_exclusion_r = 3.0f;
+    f32 jedib_create_step_LowEnd = 3.0f;
+    f32 jedib_create_step_Normal = 2.0f;
+    f32 jedib_proximity = 0.5f;
+    f32 jedib_offset = 0.5f;
+    f32 jedib_inner = 3.0f;
+    f32 jedib_safe_r = 9.0f;
+    f32 jedib_outer_r = 8.0f;
+    i32 jedib_max_baddies_per_goody = 3;
+    i32 jedib_min_baddies_per_goody = 1;
+    u32 jedib_seed = 17;
+    void *jedib_netpacket;
+    i32 jedib_n_active;
+    i32 jedib_n_drawn;
+    void AISysGetPathPos(AISYS_s *, NUVEC *, AIPATH_s **, i32, i32);
     // Gunship_B drag-bomb seek tuning.
     f32 gunshipb_seekmomseek = 5.0f;
     f32 gunshipb_seekmom = 5.0f;
@@ -75,6 +94,7 @@ extern "C" {
     void NuLgtLaser(i32, f32, f32, f32, NUVEC *, NUVEC *, u32, f32, f32);
 }
 
+NUGSPLINE *edSpline_SplineFind(nugscn_s *, char *);
 void UpdatePaintPuzzle(WORLDINFO_s *);
 GIZTURRET_s *GizTurret_FindByName(GIZTURRETSYS_s *, char *);
 
@@ -962,7 +982,136 @@ void FactoryG_Update(WORLDINFO_s *world) {
 // Jedi (Jedi_B)
 // ===========================================================================
 
-void JediB_Init(WORLDINFO_s *) {
+// One Jedi_B arena slot. Slot 0 of a cluster is the "goody" the player must
+// reach; the slots that follow it are the baddies placed around it.
+struct JEDIB_SPAWN_s {
+    NUVEC position;      // 0x00
+    i32 angle;           // 0x0c, orbit angle of a baddie around its goody
+    u8 filler_0x10[0x8]; // 0x10
+    JEDIB_SPAWN_s *link; // 0x18, goody <-> baddie cross link
+    AILOCATOR_s locator; // 0x1c
+    u8 filler_0x58[0x4]; // 0x58
+    u8 flags;            // 0x5c, bit 1 marks a baddie
+    u8 filler_0x5d[0x3]; // 0x5d
+};
+DECOMP_ASSERT(sizeof(JEDIB_SPAWN_s) == 0x60, "Jedi_B spawn slot size");
+
+struct JEDIB_s {
+    JEDIB_SPAWN_s spawns[264];              // 0x0000
+    i16 spawn_count;                        // 0x6300
+    u8 filler_0x6302[0x630c - 0x6302];      // 0x6302
+    u32 seed;                               // 0x630c
+    u8 filler_0x6310[0x63ec - 0x6310];      // 0x6310
+};
+DECOMP_ASSERT(sizeof(JEDIB_s) == 0x63ec, "Jedi_B state size");
+static JEDIB_s jedi_b;
+
+// Places one arena slot: pushes the point clear of any anti-node, drops it onto
+// the terrain and resolves the AI path position for it. Returns false when the
+// point cannot be used.
+static i32 JediBInitLocator(WORLDINFO_s *world, NUVEC *position, i32 flags, AILOCATOR_s *locator, f32 radius) {
+    if (netclient != 0)
+        return 0;
+    if (world->ai_sys != NULL) {
+        AIANTINODE_s *node = world->ai_sys->antinodes;
+        for (i32 i = 0; i < world->ai_sys->antinode_count; i++, node++) {
+            if (node->radius != 0.0f) {
+                f32 clearance = node->radius + 1.0f;
+                f32 dx = position->x - node->position.x;
+                f32 dz = position->z - node->position.z;
+                f32 distance = dx * dx + dz * dz;
+                if (clearance * clearance > distance) {
+                    f32 scale = clearance / NuFsqrt(distance);
+                    position->x = node->position.x + dx * scale;
+                    position->z = node->position.z + dz * scale;
+                    break;
+                }
+            }
+        }
+    }
+    memset(locator, 0, sizeof(*locator));
+    if (radius * radius <= position->x * position->x + position->z * position->z)
+        return 0;
+    f32 height = GameShadow(NULL, position, 5.0f, 0);
+    if (height != 2000000.0f)
+        position->y = height;
+    AISysGetPathPos(world->ai_sys, position, &locator->path, 0, 0xff);
+    if ((locator->path_flags & 1) == 0)
+        return 0;
+    locator->position = *position;
+    locator->flags = flags;
+    return 1;
+}
+
+// Scatters goody/baddie clusters over the arena disc, then lowers the teleport
+// spline so it meets the new floor.
+void JediB_Init(WORLDINFO_s *world) {
+    if (Mission_Active(MissionSys) != NULL)
+        return;
+    memset(&jedi_b, 0, sizeof(jedi_b));
+    jedi_b.seed = jedib_seed;
+    jedib_netpacket = SetLevelHack(0x20);
+    NUVEC position;
+    NUVEC orbit;
+    AILOCATOR_s locator;
+    if (netclient == 0) {
+        f32 step = jedib_create_step_Normal;
+        if (g_lowEndLevelBehaviour != 0)
+            step = jedib_create_step_LowEnd;
+        for (f32 x = -jedib_outer_r; x <= jedib_outer_r; x += step) {
+            for (f32 z = -jedib_outer_r; z <= jedib_outer_r; z += step) {
+                position.x = x + (jedib_offset - (jedib_offset + jedib_offset) * NuRandFloatSeeded(&jedi_b.seed));
+                position.y = 0.0f;
+                position.z = z + (jedib_offset - (jedib_offset + jedib_offset) * NuRandFloatSeeded(&jedi_b.seed));
+                f32 distance = position.x * position.x + position.z * position.z;
+                if (jedib_outer_r * jedib_outer_r > distance && distance > jedib_inner * jedib_inner) {
+                f32 height = GameShadow(NULL, &position, 5.0f, 0);
+                if (height != 2000000.0f)
+                    position.y = height;
+                if (!JediBInitLocator(world, &position, NuRandIntSeeded(&jedi_b.seed), &locator, jedib_outer_r))
+                    continue;
+                if (jedi_b.spawn_count > 0xff)
+                    continue;
+                JEDIB_SPAWN_s *goody = &jedi_b.spawns[jedi_b.spawn_count];
+                jedi_b.spawn_count = jedi_b.spawn_count + 1;
+                goody->position = position;
+                goody->locator = locator;
+                goody->flags &= ~2;
+                orbit.x = 0.0f;
+                orbit.y = 0.0f;
+                orbit.z = jedib_proximity;
+                i32 angle = NuRandIntSeeded(&jedi_b.seed);
+                NuVecRotateY(&orbit, &orbit, NuRandIntSeeded(&jedi_b.seed));
+                i32 baddies = jedib_min_baddies_per_goody +
+                              static_cast<i32>(NuRandIntSeeded(&jedi_b.seed) %
+                                               static_cast<u32>(jedib_max_baddies_per_goody -
+                                                                jedib_min_baddies_per_goody));
+                for (i32 i = 0; i < baddies && jedi_b.spawn_count <= 0xff; i++) {
+                    if (i != 0)
+                        angle = NuAngAdd(angle, 0x10000 / baddies);
+                    NuVecRotateY(&position, &orbit, angle);
+                    NuVecAdd(&position, &position, &goody->position);
+                    if (!JediBInitLocator(world, &position, angle, &locator, jedib_outer_r))
+                        continue;
+                    JEDIB_SPAWN_s *baddie = &jedi_b.spawns[jedi_b.spawn_count];
+                    jedi_b.spawn_count = jedi_b.spawn_count + 1;
+                    baddie->flags |= 2;
+                    baddie->position = position;
+                    baddie->locator = locator;
+                    baddie->link = goody;
+                    baddie->angle = angle;
+                    goody->link = baddie;
+                }
+                }
+            }
+        }
+    }
+    NUGSPLINE *spline = edSpline_SplineFind(world->current_gscn, "teleport_01");
+    if (spline != NULL) {
+        spline->pts[0].y -= 0.35f;
+        spline->pts[1].y = spline->pts[0].y;
+    }
+    LevBlowUp[0] = reinterpret_cast<i32>(GizmoBlowUp_FindByName(world, "Thermo_011"));
 }
 
 void JediB_Reset(WORLDINFO_s *) {

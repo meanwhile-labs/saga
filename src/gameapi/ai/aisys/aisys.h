@@ -261,7 +261,10 @@ typedef struct AILOCATOR_s {
     AIPATH *path;
     AIPATHCNX *connection;
     u8 game_flags;
-    u8 padding_0x29[7];
+    u8 padding_0x29[5];
+    // Set by AISysGetPathPos once the locator resolves onto a path.
+    u8 path_flags; // 0x2e
+    u8 padding_0x2f;
     f32 min_distance;
     f32 max_distance;
     i32 locator_flags;
