@@ -32,10 +32,6 @@ extern "C" {
         (void)page;
     }
 
-    void edpartStartPage(i8 page) {
-        (void)page;
-    }
-
     void edbriStartPage(i32 page) {
         (void)page;
     }
@@ -55,17 +51,6 @@ extern "C" {
 
     i32 edbriLoadPage(char *path, void *gscn) {
         (void)path;
-        (void)gscn;
-        return -1;
-    }
-
-    void edpartSetParticlePage(i32 page) {
-        (void)page;
-    }
-
-    i32 edpartLoadPage(char *path, i32 param, void *gscn) {
-        (void)path;
-        (void)param;
         (void)gscn;
         return -1;
     }

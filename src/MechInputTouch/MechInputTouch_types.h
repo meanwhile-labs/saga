@@ -142,8 +142,28 @@ struct WORLDINFO_s;
 struct nuvec_s;
 
 struct MechAddon {
-    struct ProcessStage {};
+    enum ProcessStage : i32 { PROCESS_STAGE_0 = 0 };
+    enum RenderStage : i32 { RENDER_STAGE_0 = 0 };
+    MechAddon(MechObjectInterface &object, u32 id) : target(&object), hash_id(id), next(NULL) {
+    }
+    virtual ~MechAddon() {
+    }
+    virtual void OnAdded() {
+    }
+    virtual void OnRemoved() {
+    }
+    virtual bool OnProcess(ProcessStage, f32) {
+        return true;
+    }
+    virtual void OnRender(RenderStage) {
+    }
+    NuMechPtr<MechObjectInterface, 4> target;
+    u32 hash_id;
+    MechAddon *next;
 };
+DECOMP_ASSERT(sizeof(MechAddon) == 0x18, "MechAddon ABI");
+DECOMP_ASSERT(offsetof(MechAddon, next) == 0x14, "MechAddon next offset");
+DECOMP_ASSERT(sizeof(MechAddon::ProcessStage) == 4, "MechAddon process stage ABI");
 struct MechAutoJumpManager : BaseThing {
     char const *GetName() override {
         return "MechAutoJumpManager";
@@ -170,11 +190,20 @@ struct MechAutofireAddon {
     void OnProcess(MechAddon::ProcessStage, float);
     virtual ~MechAutofireAddon();
 };
-struct MechEdgeStopAddon {
+struct MechEdgeStopAddon : MechAddon {
+    static HashedKey s_hashId;
     MechEdgeStopAddon(MechObjectInterface &);
-    void OnProcess(MechAddon::ProcessStage, float);
-    virtual ~MechEdgeStopAddon();
+    bool OnProcess(MechAddon::ProcessStage, float) override;
+    ~MechEdgeStopAddon() override;
+    GameObject_s *character;
+    f32 stop_timer;
+    f32 jump_start_height;
+    u8 was_jumping : 1;
 };
+DECOMP_ASSERT(sizeof(MechEdgeStopAddon) == 0x28, "MechEdgeStopAddon ABI");
+DECOMP_ASSERT(offsetof(MechEdgeStopAddon, character) == 0x18, "MechEdgeStopAddon character offset");
+DECOMP_ASSERT(offsetof(MechEdgeStopAddon, stop_timer) == 0x1c, "MechEdgeStopAddon timer offset");
+DECOMP_ASSERT(offsetof(MechEdgeStopAddon, jump_start_height) == 0x20, "MechEdgeStopAddon height offset");
 struct MechInputTouchBonusCavalryController {
     void Activate();
     void Deactivate();
@@ -440,7 +469,7 @@ struct MechObjectInterface : NuMechPtr<MechObjectInterface, 4>::ManagedBase {
     }
     virtual void TargetedFlash() {
     }
-    virtual i32 IsDead() {
+    virtual bool IsDead() {
         return 1;
     }
     virtual void *GetTgtVoidPtr() {
@@ -482,6 +511,72 @@ struct MechObjectInterface : NuMechPtr<MechObjectInterface, 4>::ManagedBase {
 };
 DECOMP_ASSERT(sizeof(MechObjectInterface) == 8, "MechObjectInterface ABI");
 DECOMP_ASSERT(sizeof(NuMechPtr<MechObjectInterface, 4>) == 12, "Mech object reference ABI");
+
+struct MechAddonCollection {
+    explicit MechAddonCollection(MechObjectInterface &object) : target(&object), first(NULL) {
+    }
+    ~MechAddonCollection() {
+        MechAddon *addon = first;
+        while (addon != NULL) {
+            MechAddon *next = addon->next;
+            addon->OnRemoved();
+            delete addon;
+            addon = next;
+        }
+    }
+    virtual void Add(MechAddon &addon) {
+        if (target.Get() != addon.target.Get())
+            return;
+        if (first != NULL) {
+            for (MechAddon *current = first; current != NULL; current = current->next) {
+                if (current == &addon)
+                    return;
+            }
+            MechAddon *last = first;
+            while (last->next != NULL)
+                last = last->next;
+            last->next = &addon;
+        } else {
+            first = &addon;
+        }
+        addon.OnAdded();
+    }
+    virtual void Remove(MechAddon &addon) {
+        MechAddon *current = first;
+        MechAddon *previous = NULL;
+        while (current != NULL && current != &addon) {
+            previous = current;
+            current = current->next;
+        }
+        if (current != NULL) {
+            if (previous != NULL)
+                previous->next = current->next;
+            else
+                first = current->next;
+            current->OnRemoved();
+            delete current;
+        }
+    }
+    virtual void Process(MechAddon::ProcessStage stage, f32 elapsed) {
+        MechAddon *addon = first;
+        while (addon != NULL) {
+            MechAddon *next = addon->next;
+            if (!addon->OnProcess(stage, elapsed))
+                Remove(*addon);
+            addon = next;
+        }
+    }
+    virtual void Render(MechAddon::RenderStage stage) {
+        // The original loop at 0x46f780 does not advance its current pointer.
+        MechAddon *addon = first;
+        while (addon != NULL)
+            addon->OnRender(stage);
+    }
+    NuMechPtr<MechObjectInterface, 4> target;
+    MechAddon *first;
+};
+DECOMP_ASSERT(sizeof(MechAddonCollection) == 0x14, "MechAddonCollection ABI");
+DECOMP_ASSERT(offsetof(MechAddonCollection, first) == 0x10, "MechAddonCollection head offset");
 // MechSystems is a BaseThing: AddOnceOnlyThings registers it on the
 // GameThingManager and ProcessThings dispatches into it every frame.
 // Virtual order = vtable for MechSystems @0x66b320 (rel slots):
@@ -580,10 +675,12 @@ struct MechTouchTask {
 };
 DECOMP_ASSERT(sizeof(MechTouchTask) == 0x18, "MechTouchTask ABI");
 struct MechTouchTaskAstroJetPack {
+    static HashedKey HashId;
     MechTouchTaskAstroJetPack(MechInputTouchGestureBasedController &);
     void Update();
 };
 struct MechTouchTaskAttack {
+    static HashedKey HashId;
     MechTouchTaskAttack(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void OnStart();
     void OnStop();
@@ -591,11 +688,13 @@ struct MechTouchTaskAttack {
     void Update();
 };
 struct MechTouchTaskBigJump {
+    static HashedKey HashId;
     MechTouchTaskBigJump(MechInputTouchGestureBasedController &, MechObjectInterface &, signed char);
     MechTouchTaskBigJump(MechInputTouchGestureBasedController &, nuvec_s &, signed char);
     void Update();
 };
 struct MechTouchTaskBlock {
+    static HashedKey HashId;
     MechTouchTaskBlock(MechInputTouchGestureBasedController &);
     void Update();
 };
@@ -646,19 +745,23 @@ struct MechTouchTaskBuildIt : MechTouchTaskGoTo {
     static HashedKey HashId;
 };
 struct MechTouchTaskHatMachine {
+    static HashedKey HashId;
     MechTouchTaskHatMachine(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void Update();
 };
 struct MechTouchTaskJump {
+    static HashedKey HashId;
     MechTouchTaskJump(MechInputTouchGestureBasedController &, JumpTriggerPacket const &, bool, bool);
     void OnStop();
     void Update();
 };
 struct MechTouchTaskPanel {
+    static HashedKey HashId;
     MechTouchTaskPanel(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void Update();
 };
 struct MechTouchTaskPlannedDoubleClickGoTo {
+    static HashedKey HashId;
     void BackgroundProcess();
     MechTouchTaskPlannedDoubleClickGoTo(MechInputTouchGestureBasedController &, MechObjectInterface *);
     void OnResume();
@@ -668,6 +771,7 @@ struct MechTouchTaskPlannedDoubleClickGoTo {
     virtual ~MechTouchTaskPlannedDoubleClickGoTo();
 };
 struct MechTouchTaskPlannedGoTo {
+    static HashedKey HashId;
     void AnalysePath();
     void BackgroundProcess();
     void GenerateWaypoints();
@@ -680,24 +784,29 @@ struct MechTouchTaskPlannedGoTo {
     virtual ~MechTouchTaskPlannedGoTo();
 };
 struct MechTouchTaskPullLever {
+    static HashedKey HashId;
     MechTouchTaskPullLever(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void Update();
 };
 struct MechTouchTaskTag {
+    static HashedKey HashId;
     MechTouchTaskTag(MechInputTouchGestureBasedController &, GameObject_s &);
     void Update();
 };
 struct MechTouchTaskUseForce {
+    static HashedKey HashId;
     MechTouchTaskUseForce(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void OnStart();
     void OnStop();
     void Update();
 };
 struct MechTouchTaskUseTeleport {
+    static HashedKey HashId;
     MechTouchTaskUseTeleport(MechInputTouchGestureBasedController &, MechObjectInterface *, VuVec const &);
     void Update();
 };
 struct MechTouchTaskUseZipUp {
+    static HashedKey HashId;
     MechTouchTaskUseZipUp(MechInputTouchGestureBasedController &);
     void OnStart();
     void Update();

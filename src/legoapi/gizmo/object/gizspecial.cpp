@@ -7,36 +7,39 @@
 #include "nu2api/nucore/nustring.h"
 #include "nu2api/nu3d/nuspecial.h"
 #include "nu2api/nu3d/nutex.h"
+#include "legoapi/world/world.h"
+#include "legoapi/world/level.h"
+#include "legoapi/characters/motion/gameanim.h"
 
 struct AIROW_s;
 struct nuqthdr_s;
 struct nunativegscene_s;
 struct SHOPINPUT;
 
-GIZMO_s *createGizSpecial(void *, char *name) {
+GIZMO *createGizSpecial(void *, char *name) {
     WORLDINFO *world = WorldInfo_CurrentlyLoading();
-    if (world != NULL && name != NULL) {
-        nuhspecial_s special;
-        char gizmo_name[32];
-        NuSpecialFind(world->current_gscn, &special, name, 0);
-        NuStrCpy(gizmo_name, "Spec_");
-        NuStrNCat(gizmo_name, name, 32 - NuStrLen("Spec_"));
-        if (NuSpecialExistsFn(&special)) {
-            GIZMO_s *gizmo = GizmoFindByName(world->gizmo_sys, gizspecial_gizmotype_id, gizmo_name);
-            if (gizmo != NULL) {
-                return gizmo;
-            }
-            if (world->giz_special_sys->count < world->current_level->max_giz_specials) {
-                GIZSPECIAL_s *entry = &world->giz_special_sys->specials[world->giz_special_sys->count];
-                GameAnimSet_AddObject(entry->anim_set, &special, 1.0f, 1e9f, 0);
-                ++world->giz_special_sys->count;
-                NuStrCpy(entry->name, "Spec_");
-                NuStrNCat(entry->name, name, 32 - NuStrLen("Spec_"));
-                return AddGizmo(world->gizmo_sys, gizspecial_gizmotype_id, NULL, entry);
-            }
-        }
-    }
-    return NULL;
+    if (world == NULL || name == NULL)
+        return NULL;
+    nuhspecial_s scene_special;
+    char gizmo_name[32];
+    static char prefix[] = "qaz_";
+    NuSpecialFind(world->current_gscn, &scene_special, name, 0);
+    NuStrCpy(gizmo_name, prefix);
+    NuStrNCat(gizmo_name, name, 32 - NuStrLen(prefix));
+    if (!NuSpecialExistsFn(&scene_special))
+        return NULL;
+    GIZMO *gizmo = GizmoFindByName(world->gizmo_sys, gizspecial_gizmotype_id, gizmo_name);
+    if (gizmo != NULL)
+        return gizmo;
+    GIZSPECIALSYS_s *system = world->giz_special_sys;
+    if (system->count >= world->current_level->max_giz_specials)
+        return NULL;
+    GIZSPECIAL_s *special = &system->specials[system->count];
+    GameAnimSet_AddObject(special->anim_set, &scene_special, 1.0f, 1000000000.0f, 0);
+    ++world->giz_special_sys->count;
+    NuStrCpy(special->name, prefix);
+    NuStrNCat(special->name, name, 32 - NuStrLen(prefix));
+    return AddGizmo(world->gizmo_sys, gizspecial_gizmotype_id, NULL, special);
 }
 
 char *GizSpecial_GetName(GIZSPECIAL_s *special) {

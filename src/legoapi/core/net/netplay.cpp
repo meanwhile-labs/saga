@@ -112,7 +112,8 @@ void FinishStatusPacket(i32 choice) {
     }
     NewLData = HUB_LDATA;
     if (choice == 0) {
-        if ((StatusPacket.mode_flags & 1) != 0 || StatusPacket.challenge_state != 0 || StatusPacket.mission_state != 0) {
+        if ((StatusPacket.mode_flags & 1) != 0 || StatusPacket.challenge_state != 0 ||
+            StatusPacket.mission_state != 0) {
             NewLData = Area_FindNextPlayLevel(ADataList[StatusPacket.area->index].levels[0]);
             FADETYPE fade = {FADE_TYPE_STILL_WIPE};
             ResetBits = 0xffffffbf;

@@ -95,8 +95,8 @@ namespace hostsl {
         };
 
         struct QueueVTable {
-            u32 (*enqueue)(void *, void *, u32); // 0x00
-            u32 (*clear)(void *);                // 0x04
+            u32 (*enqueue)(void *, void *, u32);                          // 0x00
+            u32 (*clear)(void *);                                         // 0x04
             u32 (*get_state)(void *, SLAndroidSimpleBufferQueueState_ *); // 0x08
         };
 

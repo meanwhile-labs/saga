@@ -14,3 +14,9 @@ void NuWindInitialise(NUWIND *wind) {
         }
     }
 }
+
+i32 NuWindCurrent(NUWIND *wind) {
+    if (wind == NULL || wind->unk1 < 0)
+        return -1;
+    return wind->unk0[wind->unk1];
+}

@@ -12,6 +12,7 @@
 #include "legoapi/legoapi_types.h"
 #include "nu2api/nu3d/nutex.h"
 #include "nu2api/nucore/nuanim3.h"
+#include "legoapi/core/input/qrand.h"
 
 struct AIROW_s;
 struct nuqthdr_s;
@@ -27,18 +28,7 @@ i32 (*Fighting_WeaponOutActionFn)(GameObject_s *) = NULL;
 
 extern i32 adaptivedifficulty[3];
 
-i8 adtabentries[9][4] = {
-    {-1, -1, -1, -1},
-    {-1, -1, -1, 0},
-    {-1, -1, 0, 0},
-    {-1, 0, 0, 0},
-    {0, 0, 0, 0},
-    {1, 0, 0, 0},
-    {1, 1, 0, 0},
-    {1, 1, 1, 0},
-    {1, 1, 1, 1},
-};
-i8 (*adtab)[4] = &adtabentries[4];
+extern i8 (*adtab)[4];
 
 void LoseHelmet(GameObject_s *, i32, i32) {
 }
@@ -368,7 +358,14 @@ void AutoWeaponOnOff(GameObject_s *object) {
     }
 }
 
-void RegenerateHearts(GameObject_s *) {
+extern "C" i32 ParticlesPerSecond(f32 rate, f32 elapsed);
+
+void RegenerateHearts(GameObject_s *object) {
+    if (object->current_hp > 0 && object->current_hp < object->hitpoints && object->field_0x1024 <= 0.0f &&
+        object->spawn_protection_timer <= 0.0f && ParticlesPerSecond(1.0f, FRAMETIME) > 0) {
+        ++object->current_hp;
+        GameAudio_PlaySfx(0x27, &object->apiobj.collision_position, 0, 0);
+    }
 }
 
 void WeaponScalingCode(GameObject_s *object) {

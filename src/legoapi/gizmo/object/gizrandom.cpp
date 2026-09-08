@@ -15,7 +15,7 @@ struct SHOPINPUT;
 void randyfloat() {
 }
 
-GIZMO_s *createGizRandom(void *, i32 output_count, i32 *output_weights, char *name) {
+GIZMO *createGizRandom(void *, i32 output_count, i32 *output_weights, char *name) {
     WORLDINFO *world = WorldInfo_CurrentlyLoading();
     if (world == NULL || world->giz_randoms->count == world->current_level->max_giz_randoms) {
         return NULL;

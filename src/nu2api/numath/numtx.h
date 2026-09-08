@@ -32,6 +32,7 @@ extern NUMTX numtx_identity;
 #ifdef __cplusplus
 extern "C" {
 #endif
+    void NuMtxSetRotationXYVU0(NUMTX *matrix, NUANGVEC *angles);
     /// @brief Initializes a matrix to the empty matrix
     /// @details Initializes the matrix m to the empty matrix.
     /// @param m The matrix to initialize to the empty matrix
@@ -185,7 +186,7 @@ extern "C" {
     void NuMtxCalcFaceY(NUMTX *m, NUVEC *v);
     void NuMtxGetPerspectivePS3(NUMTX *mtx, f32 *fovy, f32 *aspect, f32 *zNear, f32 *zFar);
     void NuMtxLookAtInverseD3D(NUMTX *mtx, NUVEC *eye, NUVEC *center, NUVEC *up);
-    void NuMtxToQuat(struct nuquat_s *out, NUMTX *m);
+    void NuMtxToQuat(NUMTX *m, struct nuquat_s *out);
 #ifdef __cplusplus
 }
 
