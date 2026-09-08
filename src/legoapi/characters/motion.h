@@ -67,6 +67,10 @@ NUVEC *Grabber_GetGrabPos(GRABBER_s *grabber, NUMTX *matrix);
 i32 CanClimbSurface(GameObject_s *object, i32 surface);
 i32 Pushing(GameObject_s *object, u16 *normal_angle, i32 *surface, i32 *angle_difference);
 void SetPushAngle(GameObject_s *object);
+GAMEPAD_s *ViewCamGetGamePad();
+NUVEC *ViewCamGetTgt();
+i32 ViewCamGetMode();
+void ViewCamSetActive(i32 mode, GAMEPAD_s *gamepad);
 extern MechObjectInterface *forceNextAttackOpponent;
 extern NuMechPtr<MechObjectInterface, 4> nextShootTarget;
 void ForceNextShootTarget(MechObjectInterface &target);
@@ -77,6 +81,9 @@ extern f32 GizmoBlowUpOpponent_Range2;
 extern i32 GizmoBlowUpOpponent_Behind;
 GameObject_s *ObjOpponent(GameObject_s *, f32, f32, i32, i32, i32);
 GIZMOBLOWUP_s *GizmoBlowUpOpponent(GameObject_s *, f32, f32, f32, i32, u32, u32, u32);
+
+i32 CanObjSlide(GameObject_s *object, i32 surface);
+i32 StartSlide(GameObject_s *object, i32 check_contact);
 
 #ifdef __cplusplus
 extern "C" {

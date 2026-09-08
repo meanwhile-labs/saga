@@ -45,9 +45,6 @@ i32 CircleLevel(LEVELDATA_s *level) {
 void CurrentStart(GameObject_s *, i32, i32) {
 }
 
-void DoSomeChecks(GameObject_s &, AIPATH_s &, AIPATHCNX_s &, i32) {
-}
-
 void CDataFromName(char *) {
 }
 
@@ -118,7 +115,7 @@ COLLECTID *CollectIDUnlocked(i32 id) {
     }
 
     COLLECTID *entry = &CollectList[index];
-    if (Game_CharacterSave != NULL && (Game_CharacterSave[id] & 2) != 0) {
+    if (Game_CharacterSave != NULL && (Game_CharacterSave[id] & SAVE_CHARACTER_UNLOCKED) != 0) {
         return entry;
     }
 
@@ -163,9 +160,6 @@ void ClearLastSafeTakeOver(GameObject_s *object) {
             candidate->takeover_source = NULL;
         }
     }
-}
-
-void ClearTakeOverObjectSys() {
 }
 
 void CalcValue1648Get2Values(char *data, i32 quarter, i32 stride, ani3_scalemin_s *scale_min, float *first,

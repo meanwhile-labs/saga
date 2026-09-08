@@ -1,4 +1,19 @@
 #include "legoapi/gizmos/object/gizobstacles.h"
+#include "legoapi/world/world.h"
+#include "legoapi/legoapi_types.h"
+
+u32 GizObstacles_TotalScore(void *world) {
+    GIZOBSTACLESYS_s *system = static_cast<WORLDINFO_s *>(world)->giz_obstacle_sys;
+    u32 total = 0;
+    if (system != NULL) {
+        GIZOBSTACLE_s *item = system->obstacles;
+        if (item != NULL) {
+            for (i32 i = 0; i < system->count; ++i, ++item)
+                total += item->completion_score;
+        }
+    }
+    return total;
+}
 
 #include "decomp.h"
 #include "gameapi/edtools/edfile.h"
@@ -37,14 +52,6 @@ namespace {
     enum : i32 {
         GIZOBSTACLE_PROGRESS_CAPACITY = 128,
         GIZOBSTACLE_PROGRESS_WORDS = GIZOBSTACLE_PROGRESS_CAPACITY / 32,
-    };
-
-    enum GIZOBSTACLE_OUTPUT : i32 {
-        GIZOBSTACLE_OUTPUT_AT_END = 0,
-        GIZOBSTACLE_OUTPUT_NOT_AT_START = 1,
-        GIZOBSTACLE_OUTPUT_PROXIMITY = 2,
-        GIZOBSTACLE_OUTPUT_AT_START = 3,
-        GIZOBSTACLE_OUTPUT_PLAYING_FORWARD = 4,
     };
 
     enum GIZOBSTACLE_ACTIVATE_REVERSE_FLAGS : u32 {
@@ -88,6 +95,17 @@ NUVEC *gizobstacletriggers[16];
 i32 ngizobstacletriggers;
 
 i32 obstacle_gizmotype_id = -1;
+
+void GIZOBSTACLE_s::ClearMechObjectInterface() {
+    if (mech_object_interface != NULL)
+        delete mech_object_interface;
+}
+
+MechObjectInterface *GIZOBSTACLE_s::GetMechObjectInterface() {
+    if (mech_object_interface == NULL)
+        new GizObstacleObjectInterface(*this);
+    return mech_object_interface;
+}
 
 static i32 GizObstacles_GetMaxGizmos(void *obstacle) {
     WORLDINFO *world = static_cast<WORLDINFO *>(obstacle);

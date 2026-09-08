@@ -110,6 +110,7 @@ extern "C" void APICharacterSysInit(VARIPTR *buf, VARIPTR buf_end, i32 char_coun
 GameObject_s *AddCreature(i32 id, i32 param);
 GameObject_s *AddGameObject(i32 id);
 i32 InitCreature(GameObject_s *obj, i32 id, i32 param);
+i32 NewPlayerCharacter(GameObject_s *object, i32 id, i32 old_id, i32 mode);
 void PreResetCode(GameObject_s *obj);
 void PostResetCode(GameObject_s *obj);
 NUVEC *Player_StartPos(GameObject_s *obj);
@@ -121,7 +122,8 @@ TORPEDOPACKET *GetTorpedoPacket(void);
 void SetHitPoints(GameObject_s *obj, i32 hp);
 void RememberPlayerIDs(i32 a, i32 b, i32 c);
 void Player_CopyEssentials(GameObject_s *source, GameObject_s *destination);
-void Player_ToggleCharacter(GameObject_s *object, i32 mode, i32 allow_repeat);
+void Player_ToggleCharacter(GameObject_s *object, i32 direction, i32 sound);
+i32 CanPullLevers(i32 character_id);
 
 struct WORLDINFO_s;
 void Players_InitPositions(struct WORLDINFO_s *world);

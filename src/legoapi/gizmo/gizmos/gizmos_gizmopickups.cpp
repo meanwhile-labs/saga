@@ -72,31 +72,18 @@ void GizmoPickups_SetOnOff() {
             } else {
                 GizmoPickupType[index].field_0x0f = 1;
             }
-            continue;
-        }
-        if (index == 7) {
+        } else if (index == 7) {
             GizmoPickupType[index].field_0x0f = 1;
-            continue;
-        }
-        if (index == 6) {
-            if (world->level_sub_id != -1 && Game.area_save[world->level_sub_id].field_0x5[1] != 0) {
-                GizmoPickupType[index].field_0x0f = 1;
-                continue;
-            }
-        } else if (index == 4) {
-            if (SuperStory != 0) {
-                GizmoPickupType[index].field_0x0f = 1;
-                continue;
-            }
+        } else if (index == 6 && world->level_sub_id != -1 && Game.area_save[world->level_sub_id].field_0x5[1] != 0) {
+            GizmoPickupType[index].field_0x0f = 1;
+        } else if (index == 4 && SuperStory != 0) {
+            GizmoPickupType[index].field_0x0f = 1;
         } else if (index == 9 && world->area != NULL && (world->area->flags & 0x100) != 0) {
             GizmoPickupType[index].field_0x0f = 1;
-            continue;
+        } else {
+            GizmoPickupType[index].field_0x0f = (arcade_flags & 0x20) != 0 && index != 9 && index != 5;
         }
-        GizmoPickupType[index].field_0x0f = (arcade_flags & 0x20) != 0 && index != 5 && index != 9;
     }
-}
-
-void GizmoPickup_FindByName(WORLDINFO_s *, char *) {
 }
 
 extern ADDGAMEMSG AddGameMsg_Default;
@@ -193,21 +180,6 @@ void GizmoPickup_CollectCoin(WORLDINFO_s *world, nuvec_s *position, i32 type_ind
 }
 
 void GizmoPickup_FindNearest(WORLDINFO_s *, nuvec_s *, float *) {
-}
-
-u32 GizmoPickups_TotalScore(void *world) {
-    GIZMOPICKUPRUNTIMESYS_s *system = static_cast<WORLDINFO_s *>(world)->gizmo_pickup_sys;
-    GIZMOPICKUP_s *pickup = system->pickups;
-    u32 total = 0;
-    if (pickup != NULL) {
-        for (i32 i = 0; i < system->pickup_count; ++i, ++pickup) {
-            total += GizmoPickupSys_Game.types[pickup->type_index].score;
-        }
-    }
-    return total;
-}
-
-void GizmoPickup_BeenTurnedOn(GIZMOPICKUP_s *) {
 }
 
 void GizmoPickup_NumberOfType(WORLDINFO_s *, i32, char) {

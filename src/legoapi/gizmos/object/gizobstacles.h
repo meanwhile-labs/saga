@@ -1,8 +1,19 @@
 #pragma once
 
+#include "nu2api/nucore/fixed_width.h"
+u32 GizObstacles_TotalScore(void *world);
+
 #include "legoapi/gizmo/base/gizmo.h"
 
 extern i32 obstacle_gizmotype_id;
+
+enum GIZOBSTACLE_OUTPUT : i32 {
+    GIZOBSTACLE_OUTPUT_AT_END = 0,
+    GIZOBSTACLE_OUTPUT_NOT_AT_START = 1,
+    GIZOBSTACLE_OUTPUT_PROXIMITY = 2,
+    GIZOBSTACLE_OUTPUT_AT_START = 3,
+    GIZOBSTACLE_OUTPUT_PLAYING_FORWARD = 4,
+};
 
 #ifdef __cplusplus
 

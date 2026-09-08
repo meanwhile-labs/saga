@@ -6,6 +6,7 @@
 #include "legoapi/core/input/timer.h"
 #include "legoapi/cutscenes/cutscenes.h"
 #include "legoapi/render/core/render.h"
+#include "legoapi/menus/core/text.h"
 #include "legoapi/world/level.h"
 
 extern i32 CutSceneWaiting;
@@ -218,13 +219,36 @@ void MechTouchUI::Render() {
 MechTouchUI::~MechTouchUI() {
 }
 
-MechTouchUICharIcon::MechTouchUICharIcon(MechTouchUIPartySelector &, VuVec const &, i32, float) {
+MechTouchUICharIcon::MechTouchUICharIcon(MechTouchUIPartySelector &party, VuVec const &pos, i32 id, float scale)
+    : MechTouchUIElement(pos, scale), character_id(id), icon_scale(scale), alpha_target(&icon_alpha),
+      alpha_duration(-1.0f), selector(&party) {
+    alpha_elapsed = 0.0f;
+    field_0x45 = 0;
+    alpha_delay = 0.0f;
+    selected = 0;
+    icon_alpha = 0.0f;
+    rectangular = 1;
+    alpha_end = 0.0f;
+    field_0x46 = 0;
+    alpha_start = 0.0f;
 }
 
 void MechTouchUICharIcon::Process(float) {
 }
 
 void MechTouchUICharIcon::Render() {
+    f32 scale = icon_scale;
+    if ((hovered != 0 || selected != 0) && disabled == 0)
+        scale *= 1.15f;
+    const f32 alpha = icon_alpha;
+    const i32 frame = hovered != 0 || selected != 0 ? 0xa6 : 0xa7;
+    DrawCharIcon(character_id, position.x, position.y, position.z, scale, frame, alpha, alpha, 1, NULL);
+    if (hovered != 0 || selected != 0) {
+        f32 width = radius_y * GetAspectRatio();
+        f32 x = selector->player_button->position.x + static_cast<f32>(selector->icon_count) * width + width * 0.5f;
+        SmartTextEx(TTab[CDataList[character_id].name_id], x, position.y, position.z, 0.4f, 0.4f, 0.4f, 2, 255, 255,
+                    255, 0.7f, 1, NULL, 0, static_cast<i32>(alpha * 255.0f));
+    }
 }
 
 void MechTouchUICharIcon::SetupDisabled() {

@@ -102,10 +102,17 @@ struct MechInputTouchGestureTracker {
     virtual bool OnSwipe(GameObject_s &, TouchHolder &, i32);
 };
 typedef void (*MechTouchUICallback)(MechTouchUIElement &, TouchHolder &);
+float GetAspectRatio();
+
 struct MechTouchUIElement {
     MechTouchUIElement()
         : managed_links(NULL), position(), radius_x(0.0f), radius_y(0.0f), on_down(NULL), on_click(NULL), on_hold(NULL),
           on_release(NULL), on_leave(NULL), hovered(0), disabled(0), visible(1), rectangular(0), owner(NULL) {
+    }
+    MechTouchUIElement(VuVec const &pos, float radius)
+        : managed_links(NULL), position(pos), radius_x(GetAspectRatio() * radius), radius_y(radius), on_down(NULL),
+          on_click(NULL), on_hold(NULL), on_release(NULL), on_leave(NULL), hovered(0), disabled(0), visible(1),
+          owner(NULL) {
     }
     virtual ~MechTouchUIElement();
     virtual void Process(float);
@@ -632,11 +639,31 @@ struct MechSystems : BaseThing {
         return *reinterpret_cast<MechTouchUIPauseButton *>(pause_button_storage);
     }
 };
-struct MechTempPosInterface {
-    void GetFloorTargetPos(VuVec &, i32) const;
+struct MechTempPosInterface : MechObjectInterface {
+    VuVec position;
+    f32 radius;
+    void GetPos(VuVec &result, i32) const override {
+        result.xyz = position.xyz;
+    }
+    void GetFloorTargetPos(VuVec &, i32) const override;
+    f32 GetRadius() const override {
+        return radius;
+    }
+    f32 GetHeight() const override {
+        return 0.2f;
+    }
+    const char *GetTargetName() const override {
+        return "(TEMPPOS)";
+    }
+    i32 GetObjectType() const override {
+        return 1;
+    }
     MechTempPosInterface(VuVec const &);
     MechTempPosInterface(nuvec_s const &);
 };
+DECOMP_ASSERT(sizeof(MechTempPosInterface) == 0x1c, "Temporary position interface size");
+DECOMP_ASSERT(offsetof(MechTempPosInterface, position) == 8, "Temporary target position offset");
+DECOMP_ASSERT(offsetof(MechTempPosInterface, radius) == 0x18, "Temporary target radius offset");
 struct MechTouchTask {
     MechTouchTask(MechInputTouchGestureBasedController &);
     virtual ~MechTouchTask();
@@ -833,7 +860,21 @@ struct MechTouchUICharIcon : MechTouchUIElement {
     void Process(float) override;
     void Render() override;
     void SetupDisabled();
-    u8 field_0x3c[0x80 - 0x3c];
+    i32 character_id;
+    f32 icon_scale;
+    u8 selected;
+    u8 field_0x45;
+    u8 field_0x46;
+    u8 field_0x47;
+    f32 *alpha_target;
+    f32 alpha_start;
+    f32 alpha_end;
+    f32 alpha_elapsed;
+    f32 alpha_duration;
+    f32 alpha_delay;
+    f32 icon_alpha;
+    MechTouchUIPartySelector *selector;
+    u8 field_0x68[0x80 - 0x68];
 };
 struct MechTouchUIPartySelector {
     void BlendOut();
@@ -841,6 +882,10 @@ struct MechTouchUIPartySelector {
     void Cleanup();
     MechTouchUIPartySelector(MechTouchUIPlayerButton &, i32 *);
     ~MechTouchUIPartySelector();
+    i32 icon_count;
+    MechTouchUICharIcon *icons[32];
+    MechTouchUIPlayerButton *player_button;
+    u8 field_0x88;
 };
 struct MechTouchUIPauseButton : MechTouchUIElement {
     MechTouchUIPauseButton();
@@ -879,6 +924,9 @@ DECOMP_ASSERT(sizeof(MechInputTouchGestureTracker) == 0x4, "MechInputTouchGestur
 DECOMP_ASSERT(sizeof(MechTouchUIElement) == 0x3c, "MechTouchUIElement size");
 DECOMP_ASSERT(sizeof(MechTouchUI) == 0x84, "MechTouchUI size");
 DECOMP_ASSERT(sizeof(MechTouchUIPlayerButton) == 0x164, "MechTouchUIPlayerButton size");
+DECOMP_ASSERT(sizeof(MechTouchUICharIcon) == 0x80, "MechTouchUICharIcon size");
+DECOMP_ASSERT(sizeof(MechTouchUIPartySelector) == 0x8c, "MechTouchUIPartySelector size");
+DECOMP_ASSERT(offsetof(MechTouchUIPartySelector, player_button) == 0x84, "party selector player button offset");
 DECOMP_ASSERT(sizeof(MechTouchUIPauseButton) == 0x44, "MechTouchUIPauseButton size");
 DECOMP_ASSERT(sizeof(MechTouchUITagButton) == 0xe4, "MechTouchUITagButton size");
 DECOMP_ASSERT(sizeof(MechInputTouchSystem) == 0x8, "MechInputTouchSystem size");

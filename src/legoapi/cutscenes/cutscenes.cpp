@@ -97,7 +97,7 @@ extern "C" TERRAIN_SURFACE_s TerSurface[32];
 extern "C" void APITransparentCharDraw(nuhgobj_s *, NUMTX *, i32, i16 *, NUMTX *, void **, i32);
 extern "C" void instNuGCutLocatorUpdate(instNUGCUTSCENE_s *, NUGCUTLOCATORSYS_s *, instNUGCUTLOCATOR_s *,
                                         NUGCUTLOCATOR_s *, f32, NUMTX *, i32);
-CUTSCENEPLAYERCLIP_s *CutScenePlayer_Active(void);
+CUTSCENEPLAYERCLIP *CutScenePlayer_Active(void);
 void CutScenePlayer_SetObjects(CUTINFO *);
 void AddPartDebris(PARTDEBSYS_s *, i32, nuvec_s *);
 extern "C" void DebrisSetRenderGroup(i32);
@@ -167,7 +167,7 @@ static void bgLoadStreamCutScene(bgprocinfo_s *) {
     }
 }
 
-__attribute__((noinline)) static i32 CutScene_Start(WORLDINFO_s *world, CUTINFO *cut, i32) {
+static i32 CutScene_Start(WORLDINFO_s *world, CUTINFO *cut, i32) {
     instNUGCUTSCENE_s *instance = static_cast<instNUGCUTSCENE_s *>(cut->instance);
     if (cut->music_handle != -1) {
         g_lastCutsceneTime = 0.0f;
@@ -351,7 +351,7 @@ void CutScenes_Reset(WORLDINFO_s *world) {
         ((world->current_level->flags & 0xe0) != 0 || world->level_progress == NULL ||
          (world->level_progress->flags & 2) == 0)) {
         CUTINFO *cut = NULL;
-        CUTSCENEPLAYERCLIP_s *clip = CutScenePlayer_Active();
+        CUTSCENEPLAYERCLIP *clip = CutScenePlayer_Active();
         if (clip != NULL && world->cutscene_sys->count > 0) {
             if (clip->name[0] != '\0')
                 cut = CutScene_Find(world->cutscene_sys, clip->name);
@@ -1251,7 +1251,7 @@ static void CutScene_RigidPostRender(NUGCUTRIGID_s *rigid, instNUGCUTRIGID_s *in
         return;
     }
 
-    volatile f32 ground = GameShadow(NULL, position, 5.0f, -1);
+    f32 ground = GameShadow(NULL, position, 5.0f, -1);
     if (ground == 2000000.0f) {
         return;
     }

@@ -1,4 +1,6 @@
 #include "legoapi/gizmos/traps/gizturrets.h"
+#include "legoapi/world/world.h"
+#include "legoapi/legoapi_types.h"
 
 #include "decomp.h"
 #include "gameapi/edtools/edfile.h"
@@ -244,7 +246,7 @@ static void *GizTurrets_AllocateProgressData(VARIPTR *buffer, VARIPTR *buffer_en
 }
 
 static void GizTurrets_ClearProgress(void *, void *progress_ptr) {
-    volatile u32 *progress = static_cast<u32 *>(progress_ptr);
+    u32 *progress = static_cast<u32 *>(progress_ptr);
     if (progress == NULL) {
         return;
     }
@@ -513,13 +515,11 @@ static i32 GizTurrets_Load(void *world_ptr, void *system_ptr) {
             turret->field_0x126 = static_cast<i16>(GetSfxId(name));
         }
         if (version > 6) {
-            i32 name_result;
-            do {
-                name_result = GizmoFileReadName(name);
-                if (name_result != 0) {
-                    turret->field_0x138 = static_cast<i16>(GetSfxId(name));
-                }
-            } while (name_result != 0);
+            // One optional sound name, not a zero-terminated list. Reading
+            // again consumes the blowup name and shifts the next turret.
+            if (GizmoFileReadName(name) != 0) {
+                turret->field_0x138 = static_cast<i16>(GetSfxId(name));
+            }
         }
         if (GizmoFileReadName(name) != 0) {
             turret->blowup_type = static_cast<i16>(GizmoBlowupGetNameTableId(name));

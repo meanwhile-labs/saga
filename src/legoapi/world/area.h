@@ -7,11 +7,12 @@
 
 struct SUPERCOUNTER;
 enum AREA_EPISODE_INDEX {
-    AREA_EPISODE_I = 1,
-    AREA_EPISODE_II = 2,
-    AREA_EPISODE_III = 3,
-    AREA_EPISODE_IV = 4,
-    AREA_EPISODE_V = 5,
+    AREA_EPISODE_I = 0,
+    AREA_EPISODE_II = 1,
+    AREA_EPISODE_III = 2,
+    AREA_EPISODE_IV = 3,
+    AREA_EPISODE_V = 4,
+    AREA_EPISODE_VI = 5,
     AREA_EPISODE_NONE = 0xff,
 };
 
@@ -42,6 +43,7 @@ typedef struct AREADATA_s {
     i16 *hub_player_ids; // 0x98, optional extra hub characters terminated by -1
 } AREADATA;
 DECOMP_ASSERT(sizeof(AREADATA) == 0x9c, "AREADATA ABI");
+DECOMP_ASSERT(offsetof(AREADATA, index) == 0x7c, "AREADATA index offset");
 DECOMP_ASSERT(offsetof(AREADATA, episode_index) == 0x86, "AREADATA episode index offset");
 DECOMP_ASSERT(offsetof(AREADATA, area_index) == 0x87, "AREADATA area index offset");
 

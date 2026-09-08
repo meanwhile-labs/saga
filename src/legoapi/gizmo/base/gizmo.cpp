@@ -1,6 +1,7 @@
 #include "legoapi/gizmo/base/gizmo.h"
 #include "decomp.h"
 #include "globals.h"
+#include "MechInputTouch/MechInputTouch_types.h"
 
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
 #include "legoapi/gizmo/base/GizBuildItObjectInterface.h"
@@ -478,72 +479,101 @@ void GizmoSysClearLevelProgress(void *unknown, i32 type_id) {
     }
 }
 
-extern f32 hackFlashTimer;
-extern GAMEANIMSET_s *hackFlashingGameAnimSet;
-nuhspecial_s *hackFlashingSpecial;
+extern "C" {
+    extern f32 hackFlashTimer;
+    extern GAMEANIMSET_s *hackFlashingGameAnimSet;
+    nuhspecial_s *hackFlashingSpecial;
+}
 
-void GizForceObjectInterface::GetPos(VuVec &position, i32) const {
-    if (animation_object != NULL) {
-        NUVEC *origin = NuSpecialGetDrawPos(&animation_object->special);
-        position = VuVec(origin->x, origin->y, origin->z, 1.0f);
+void GizForceObjectInterface::GetPos(VuVec &result, i32) const {
+    if (selected_object != NULL) {
+        NUVEC *position = NuSpecialGetDrawPos(&selected_object->special);
+        result = VuVec(position->x, position->y, position->z, 1.0f);
     } else {
-        position = VuVec(force->position.x, force->position.y, force->position.z, 1.0f);
+        result = VuVec(force.position.x, force.position.y, force.position.z, 1.0f);
     }
 }
 
 f32 GizForceObjectInterface::GetRadius() const {
-    if (animation_object != NULL)
-        return NuSpecialGetOriginRadius(&animation_object->special);
-    return force->radius;
+    if (selected_object != NULL)
+        return NuSpecialGetOriginRadius(&selected_object->special);
+    return force.radius;
 }
 
 const char *GizForceObjectInterface::GetTargetName() const {
-    return force->name;
+    return force.name;
 }
 
 void *GizForceObjectInterface::GetTgtVoidPtr() {
-    if (animation_object != NULL)
-        return animation_object;
-    return force;
+    if (selected_object != NULL)
+        return selected_object;
+    return &force;
 }
 
-GizForceObjectInterface::GizForceObjectInterface(GIZFORCE_s &object) : force(&object) {
-    object.mech_object_interface = this;
+GizForceObjectInterface::GizForceObjectInterface(GIZFORCE_s &value) : force(value) {
+    force.mech_object_interface = this;
 }
 
 void GizForceObjectInterface::TargetedFlash() {
-    if ((force->field_0xaa & 0x40) == 0) {
+    if (!(force.field_0xaa & 0x40)) {
         hackFlashTimer = 1.0f;
-        if (animation_object != NULL) {
-            hackFlashingSpecial = &animation_object->special;
+        if (selected_object != NULL) {
+            hackFlashingSpecial = &selected_object->special;
             hackFlashingGameAnimSet = NULL;
         } else {
             hackFlashingSpecial = NULL;
-            hackFlashingGameAnimSet = force->anim_set;
+            hackFlashingGameAnimSet = force.anim_set;
         }
     }
 }
 
 GizForceObjectInterface::~GizForceObjectInterface() {
-    force->mech_object_interface = NULL;
+    force.mech_object_interface = NULL;
 }
 
-void GizLeverObjectInterface::GetPos(VuVec &, i32) const {
+void MechObjectInterface::GetFloorTargetPos(VuVec &position, i32 mode) const {
+    GetPos(position, mode);
 }
 
-void GizLeverObjectInterface::GetRadius() const {
+void MechTempPosInterface::GetFloorTargetPos(VuVec &result, i32 mode) const {
+    GetPos(result, mode);
 }
 
-void GizLeverObjectInterface::GetTargetName() const {
+MechTempPosInterface::MechTempPosInterface(VuVec const &value) {
+    position.x = value.x;
+    position.y = value.y;
+    position.z = value.z;
+    position.w = value.w;
+    radius = 0.2f;
 }
 
-GizLeverObjectInterface::GizLeverObjectInterface(LEVER_s &) {
+MechTempPosInterface::MechTempPosInterface(nuvec_s const &value) {
+    position.xyz = value;
+    radius = 0.2f;
+}
+
+void GizLeverObjectInterface::GetPos(VuVec &position, i32) const {
+    position = VuVec(lever.position.x, lever.position.y, lever.position.z, 1.0f);
+}
+
+f32 GizLeverObjectInterface::GetRadius() const {
+    return 0.1f;
+}
+
+const char *GizLeverObjectInterface::GetTargetName() const {
+    return lever.name;
+}
+
+GizLeverObjectInterface::GizLeverObjectInterface(LEVER_s &value) : lever(value) {
+    lever.mech_object = this;
 }
 
 void GizLeverObjectInterface::TargetedFlash() {
+    lever.flash_timer = 1.0f;
 }
 
 GizLeverObjectInterface::~GizLeverObjectInterface() {
+    lever.mech_object = NULL;
 }
 
 void GizPanelObjectInterface::GetFloorTargetPos(VuVec &, i32) const {
@@ -689,25 +719,33 @@ void HatMachineObjectInterface::TargetedFlash() {
 HatMachineObjectInterface::~HatMachineObjectInterface() {
 }
 
-void GizObstacleObjectInterface::GetPos(VuVec &, i32) const {
+void GizObstacleObjectInterface::GetPos(VuVec &result, i32) const {
+    result = VuVec(obstacle.evaluated_position.x, obstacle.evaluated_position.y, obstacle.evaluated_position.z, 1.0f);
 }
 
-void GizObstacleObjectInterface::GetRadius() const {
+f32 GizObstacleObjectInterface::GetRadius() const {
+    return obstacle.field_0x58;
 }
 
-void GizObstacleObjectInterface::GetTargetName() const {
+const char *GizObstacleObjectInterface::GetTargetName() const {
+    return obstacle.name;
 }
 
-GizObstacleObjectInterface::GizObstacleObjectInterface(GIZOBSTACLE_s &) {
+GizObstacleObjectInterface::GizObstacleObjectInterface(GIZOBSTACLE_s &value) : obstacle(value) {
+    obstacle.mech_object_interface = this;
 }
 
-void GizObstacleObjectInterface::IsDead() {
+bool GizObstacleObjectInterface::IsDead() {
+    return !(obstacle.progress_flags & 1);
 }
 
 void GizObstacleObjectInterface::TargetedFlash() {
+    hackFlashTimer = 1.0f;
+    hackFlashingGameAnimSet = obstacle.anim_set;
 }
 
 GizObstacleObjectInterface::~GizObstacleObjectInterface() {
+    obstacle.mech_object_interface = NULL;
 }
 
 static __used__ void CheckIfParentsFinished(GIZFLOW_s *system, FLOWBOX_s *box) {
@@ -748,19 +786,19 @@ static __used__ void CheckIfParentsFinished(GIZFLOW_s *system, FLOWBOX_s *box) {
 
 static void ProcessFlowBox(GIZFLOW_s *, FLOWBOX_s *, u8);
 
-static __used__ void ResetForLoopEx(GIZFLOW_s *system, FLOWBOX_s *loop, FLOWBOX_s *box, i32 checksum) {
-    if (box == loop || box->loop_checksum == checksum)
-        return;
-    box->loop_checksum = checksum;
-    if (box->type == 0 && (box->state_flags_high & 0x10) == 0) {
-        FLOWBOXGIZMODATA_s *data = box->data;
-        if (data != NULL) {
-            for (i32 i = 0; i < data->gizmo_count; ++i)
-                GizmoActivate(system->gizmo_sys, data->gizmos[i]->gizmo, 0, 1);
+static void ResetForLoopEx(GIZFLOW_s *flow, FLOWBOX_s *root, FLOWBOX_s *box, i32 checksum) {
+    if (box != root && box->loop_checksum != checksum) {
+        box->loop_checksum = checksum;
+        if (box->type == 0 && (box->state_flags_high & 0x10) == 0 && box->data != NULL) {
+            FLOWBOXGIZMODATA_s *data = box->data;
+            for (i32 i = 0; i < data->gizmo_count; ++i) {
+                GizmoActivate(flow->gizmo_sys, data->gizmos[i]->gizmo, 0, 1);
+            }
+        }
+        for (i32 i = 0; i < box->child_count; ++i) {
+            ResetForLoopEx(flow, root, box->children[i], checksum);
         }
     }
-    for (i32 i = 0; i < box->child_count; ++i)
-        ResetForLoopEx(system, loop, box->children[i], checksum);
 }
 
 static __used__ void ResetGizmoFlowBox(GIZFLOW_s *giz_flow, FLOWBOX_s *flow_box) {
@@ -906,15 +944,16 @@ static i32 ProcessActionFlowBox(GIZFLOW_s *system, FLOWBOX_s *box, u8) {
     return 1;
 }
 
-static i32 ProcessConditionFlowBox(GIZFLOW_s *system, FLOWBOX_s *box, u8) {
-    u8 *condition = box->condition_data;
+static i32 ProcessConditionFlowBox(GIZFLOW_s *flow, FLOWBOX_s *box, u8) {
+    u8 *condition = reinterpret_cast<u8 *>(box->data);
     if (condition == NULL) {
         FLOWBOX_s **parents = box->parents;
         u8 *outputs = box->output_indices;
         for (i32 i = 0; i < box->parent_count; ++i) {
             FLOWBOX_s *parent = parents[i];
-            if (!flowboxtypes[parent->type].check_output(system, parent, outputs[i]))
+            if (flowboxtypes[parent->type].check_output(flow, parent, outputs[i]) == 0) {
                 return 0;
+            }
         }
         return 1;
     }
@@ -924,8 +963,9 @@ static i32 ProcessConditionFlowBox(GIZFLOW_s *system, FLOWBOX_s *box, u8) {
             u8 *outputs = box->output_indices;
             for (i32 i = 0; i < box->parent_count; ++i) {
                 FLOWBOX_s *parent = parents[i];
-                if (!flowboxtypes[parent->type].check_output(system, parent, outputs[i]))
+                if (flowboxtypes[parent->type].check_output(flow, parent, outputs[i]) == 0) {
                     return 0;
+                }
             }
             break;
         }
@@ -934,56 +974,56 @@ static i32 ProcessConditionFlowBox(GIZFLOW_s *system, FLOWBOX_s *box, u8) {
             u8 *outputs = box->output_indices;
             for (i32 i = 0; i < box->parent_count; ++i) {
                 FLOWBOX_s *parent = parents[i];
-                if (flowboxtypes[parent->type].check_output(system, parent, outputs[i]))
+                if (flowboxtypes[parent->type].check_output(flow, parent, outputs[i]) != 0) {
                     return 0;
+                }
             }
             break;
         }
         case 1:
         case 3:
         case 5: {
-            i32 required = condition[0] == 1 ? 1 : condition[1];
-            if (box->parent_count == 0) {
-                if (required != 0)
-                    return 0;
-                break;
-            }
+            const i32 required = condition[0] == 1 ? 1 : condition[1];
             FLOWBOX_s **parents = box->parents;
             u8 *outputs = box->output_indices;
             i32 count = 0;
             for (i32 i = 0; i < box->parent_count; ++i) {
                 FLOWBOX_s *parent = parents[i];
-                if (flowboxtypes[parent->type].check_output(system, parent, outputs[i]))
-                    ++count;
+                count += flowboxtypes[parent->type].check_output(flow, parent, outputs[i]) != 0;
             }
-            if (condition[0] == 5)
+            if (condition[0] == 5) {
                 return count == required;
-            if (count < required)
+            }
+            if (count < required) {
                 return 0;
+            }
             break;
         }
         case 4: {
             i32 required = box->parent_count;
-            if (box->state_flags_high & 4)
+            if ((box->state_flags_high & 4) != 0) {
                 required -= box->loop_parent_count;
-            if (box->parent_count == 0)
-                break;
-            FLOWBOX_s **parents = box->parents;
-            u8 *outputs = box->output_indices;
-            i32 count = 0;
-            for (i32 i = 0; i < box->parent_count; ++i) {
-                FLOWBOX_s *parent = parents[i];
-                if (flowboxtypes[parent->type].check_output(system, parent, outputs[i]))
-                    ++count;
             }
-            if (count < required)
-                return 0;
+            if (box->parent_count != 0) {
+                FLOWBOX_s **parents = box->parents;
+                u8 *outputs = box->output_indices;
+                i32 count = 0;
+                for (i32 i = 0; i < box->parent_count; ++i) {
+                    FLOWBOX_s *parent = parents[i];
+                    count += flowboxtypes[parent->type].check_output(flow, parent, outputs[i]) != 0;
+                }
+                if (count < required) {
+                    return 0;
+                }
+            }
             break;
         }
     }
     if (condition[0] == 4) {
-        for (i32 i = 0; i < box->child_count; ++i)
-            ResetForLoopEx(system, box, box->children[i], getNextLoopChecksum());
+        for (i32 i = 0; i < box->child_count; ++i) {
+            const u8 checksum = getNextLoopChecksum();
+            ResetForLoopEx(flow, box, box->children[i], checksum);
+        }
     }
     return 1;
 }
@@ -1351,16 +1391,18 @@ i32 GizmoNameUsesPrefix(char *name, char *prefix) {
     return 1;
 }
 
-void GizmoActivateReverse(GIZMOSYS_s *system, GIZMO_s *gizmo, i32 active, i32 visibility, i32) {
-    i32 operation = visibility != 0 ? 6 : 2;
-    i32 query = visibility != 0 ? 7 : 3;
-    if (gizmo != NULL && gizmotypes != NULL) {
-        GIZMOACTIVATEREVFN callback = gizmotypes->types[gizmo->type_id].fns.activate_rev_fn;
-        if (callback != NULL && callback(gizmo, active, query)) {
-            gizmotypes->types[gizmo->type_id].fns.activate_rev_fn(gizmo, active, operation);
-            if (visibility != 0)
-                GizmoSetVisibility(system, gizmo, active == 0, 1);
-        }
+void GizmoActivateReverse(GIZMOSYS_s *system, GIZMO_s *gizmo, i32 reverse, i32 visibility, i32) {
+    const i32 command = visibility == 0 ? 2 : 6;
+    const i32 query = visibility == 0 ? 3 : 7;
+    if (gizmo == NULL || gizmotypes == NULL || gizmotypes->types[gizmo->type_id].fns.activate_rev_fn == NULL) {
+        return;
+    }
+    if (gizmotypes->types[gizmo->type_id].fns.activate_rev_fn(gizmo, reverse, query) == 0) {
+        return;
+    }
+    gizmotypes->types[gizmo->type_id].fns.activate_rev_fn(gizmo, reverse, command);
+    if (visibility != 0) {
+        GizmoSetVisibility(system, gizmo, reverse == 0, 1);
     }
 }
 

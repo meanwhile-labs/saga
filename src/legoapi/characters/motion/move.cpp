@@ -1,4 +1,5 @@
 #include "decomp.h"
+#include "legoapi/actions/character/snake.h"
 #include "MechInputTouch/MechInputTouch_types.h"
 #include "globals.h"
 #include "gamelib/util/gamelib_util_types.h"
@@ -20,7 +21,9 @@
 #include "legoapi/gizmos/transport/tubes.h"
 #include "legoapi/gizmos/door/zipups.h"
 #include "legoapi/gizmos/transport/grapples.h"
+#include "legoapi/gizmos/transport/tightropes.h"
 #include "legoapi/legoapi_types.h"
+#include "legoapi/menus/screens/shop.h"
 #include "legoapi/props/system/socksys.h"
 #include "legoapi/render/core/rtl.h"
 #include "legoapi/render/fx.h"
@@ -46,6 +49,8 @@ extern "C" i16 id_GRABCONTROL, id_GRABR2CONTROL;
 
 float SLAMGRAVITY = -15.0f;
 static float applygravity_extrahoveroffset;
+
+extern i32 LEGOCONTEXT_TUBE;
 
 void MovePlayer_DIRECTIONAL(GameObject_s *object);
 i32 CanStepBack(GameObject_s *object);
@@ -87,7 +92,6 @@ void Hang_MoveCode(GameObject_s *object);
 void Ledge_MoveCode(WORLDINFO_s *world, GameObject_s *object);
 void LedgeTerrain_MoveCode(GameObject_s *object);
 void Climb_MoveCode(GameObject_s *object);
-void TightRope_MoveCode(GameObject_s *object, i32 jump_pressed);
 void ForcedBackCode(GameObject_s *object);
 void Tube_MoveCode(GameObject_s *object, WORLDINFO_s *world);
 void PushCode(GameObject_s *object, i32 allow_grab);
@@ -157,7 +161,7 @@ i32 (*FindSlamOrigin_UseCPosFn)(GameObject_s *) = NULL;
 void (*Jump_EndOfLandContextFn)(GameObject_s *) = NULL;
 void ConstantRumble(GameObject_s *object, f32 strength, f32 duration);
 extern "C" void PlaySfxAndSetVolume(char *name, NUVEC *position, f32 volume);
-void GizForce_FindBestForceTarget(GIZFORCESYS_s *, GameObject_s *);
+i32 GizForce_FindBestForceTarget(GIZFORCESYS_s *, GameObject_s *);
 i32 GizForce_StoodOnForce(GIZFORCE_s *, GameObject_s *);
 u16 GizForces_AngleToForce(NUVEC *, GIZFORCE_s *);
 void SetHeadTarget(GameObject_s *, NUVEC *, i8, f32, f32, f32);
@@ -209,16 +213,16 @@ void TorpedoCode(GameObject_s *, i32, f32);
 void PeriscodeCode(GameObject_s *);
 i32 PodLevel(AREADATA_s *);
 void KeepOnScreen(GameObject_s *);
-void CreateSnakeBody(GameObject_s *, i32);
 void UpdateSnakeBody(GameObject_s *);
 void Teleport_NetMoveCode(GameObject_s *);
 void TractorBeamCode(GameObject_s *);
 void AddSurfaceRipples(GameObject_s *);
 extern i16 id_SNAKE;
-extern i16 id_ATAT;
+extern "C" i16 id_ATAT;
 extern i16 id_YODA, id_YODAGHOST;
 extern i16 id_C3PO, id_TC14;
-extern i16 id_DROIDEKA, id_ATST, id_MINIATST, id_ATST_LOWRES, id_MINIATAT, id_MINIATTE, id_RANCOR;
+extern i16 id_DROIDEKA, id_RANCOR;
+extern "C" i16 id_ATST, id_MINIATST, id_ATST_LOWRES, id_MINIATAT, id_MINIATTE;
 void Attracto_MoveCode(WORLDINFO_s *, GameObject_s *);
 void SecurityDoor_MoveCode(WORLDINFO_s *, GameObject_s *);
 void Batarang_MoveCode(GameObject_s *);
@@ -296,8 +300,8 @@ void MovePlayer_ROLLING(GameObject_s *object);
 extern f32 Hub_PadSpeed[2];
 extern u16 Hub_PadAngle[2];
 extern f32 drop_back_in_timer;
-i32 LIFTPLAYER;
-f32 OFFSCREEN_CATCHUP_TIME = 1.0f;
+extern i32 LIFTPLAYER;
+extern f32 OFFSCREEN_CATCHUP_TIME;
 
 void MoveBlocks(WORLDINFO_s *, pushblock_s *, i32, nuvec_s *) {
 }
@@ -567,20 +571,29 @@ static void SetGameCameraView(GAMECAMERA_s *camera, const NUVEC &position, const
     NUVEC delta;
     NuVecSub(&delta, const_cast<NUVEC *>(&target), const_cast<NUVEC *>(&position));
 
-    const u16 desired_pitch = static_cast<u16>(-NuAtan2D(delta.y, NuFsqrt(delta.x * delta.x + delta.z * delta.z)));
-    const u16 desired_yaw = static_cast<u16>(NuAtan2D(delta.x, delta.z));
+    u16 desired_pitch = static_cast<u16>(-NuAtan2D(delta.y, NuFsqrt(delta.x * delta.x + delta.z * delta.z)));
+    u16 desired_yaw = static_cast<u16>(NuAtan2D(delta.x, delta.z));
+    u16 desired_roll = 0;
+    if (camera->blend_duration > camera->blend_time && camera->blend_mode == 2) {
+        const f32 blend = MIN(2.0f * (camera->blend_time / camera->blend_duration), 1.0f);
+        desired_pitch =
+            camera->blend_start_pitch + static_cast<i32>(RotDiff(camera->blend_start_pitch, desired_pitch) * blend);
+        desired_yaw = camera->blend_start_yaw + static_cast<i32>(RotDiff(camera->blend_start_yaw, desired_yaw) * blend);
+        desired_roll =
+            camera->blend_start_roll + static_cast<i32>(RotDiff(camera->blend_start_roll, desired_roll) * blend);
+    }
     camera->desired_pitch = desired_pitch;
     camera->desired_yaw = desired_yaw;
-    camera->desired_roll = 0;
+    camera->desired_roll = desired_roll;
 
     if (snap_angles) {
         camera->pitch = desired_pitch;
         camera->yaw = desired_yaw;
-        camera->roll = 0;
+        camera->roll = desired_roll;
     } else {
         camera->pitch = SeekRot(static_cast<u16>(camera->pitch), desired_pitch, camera->angle_seek);
         camera->yaw = SeekRot(static_cast<u16>(camera->yaw), desired_yaw, camera->angle_seek);
-        camera->roll = SeekRot(static_cast<u16>(camera->roll), 0, camera->angle_seek);
+        camera->roll = SeekRot(static_cast<u16>(camera->roll), desired_roll, camera->angle_seek);
     }
 
     camera->pos = position;
@@ -614,10 +627,8 @@ static void SetGameCameraView(GAMECAMERA_s *camera, const NUVEC &position, const
 }
 
 void MoveGameCamera(GAMECAMERA_s *camera) {
-    // Original title-camera mode (3): portal_places[2] contains one camera
-    // position followed by its look target.  The complete function selects
-    // many gameplay camera modes; only this currently reachable mode is
-    // transcribed here.
+    // Recovered title, socket and shop modes. Other gameplay modes remain
+    // incomplete; keep their reconstruction tied to the original dispatcher.
     if (camera == NULL || WORLD == NULL || WORLD->current_level == NULL) {
         return;
     }
@@ -674,47 +685,85 @@ void MoveGameCamera(GAMECAMERA_s *camera) {
     // system is present and its rail-camera mode otherwise.  Both modes use
     // the same player-focus path below.
     camera->mode = WORLD->sock_sys == NULL ? 0 : 1;
+    if (SHOPACTIVE != 0 && shopcampos != NULL && shopcamlookat != NULL) {
+        camera->mode = 8;
+    }
     const bool mode_changed = camera->mode != camera->previous_mode;
-    NUVEC player_camera_positions[2];
-    NUVEC player_positions[2];
-    i32 player_count = 0;
-    for (i32 i = 0; i < 2; ++i) {
-        // Original rail-camera eligibility (0x11138b..0x1113dc): an AI
-        // companion contributes to the focus only when LookAtBoth is set.
-        if (Player[i] == NULL || (static_cast<i8>(Player[i]->apiobj.flags_low) >= 0 && LookAtBoth == 0) ||
-            (netcamera != 0 && (Player[i]->apiobj.field_0x1f4 & 0x40000) != 0) ||
-            (BonusWinner != -1 && i != BonusWinner)) {
-            continue;
-        }
-        PlayerCamPos(Player[i], &player_camera_positions[player_count], &camera->pos);
-        player_positions[player_count] = Player[i]->apiobj.position;
-        ++player_count;
+    if (mode_changed && camera->previous_mode != -1 && (camera->mode == 8 || camera->previous_mode == 8)) {
+        GameCam_Blend(camera, 1.0f, 0.0f, 1);
     }
-    if (player_count == 0) {
-        return;
-    }
-
     NUVEC position = camera->pos;
     NUVEC target = {0.0f, 0.0f, 0.0f};
-    for (i32 i = 0; i < player_count; ++i) {
-        NuVecAdd(&target, &target, &player_camera_positions[i]);
-    }
-    NuVecScale(&target, &target, 1.0f / static_cast<f32>(player_count));
-
-    f32 overlap_blend = 0.0f;
-    f32 position_seek = camera->position_seek;
-    f32 angle_seek = camera->angle_seek;
     f32 camera_shake = 0.0f;
-    f32 separation_scale = 0.0f;
-    SockSysCamera(WORLD->sock_sys, &camera->pos, camera->mode != camera->previous_mode, player_camera_positions,
-                  player_positions, player_count, &camera->sock_position, &position, &target, &overlap_blend,
-                  &position_seek, &angle_seek, &camera_shake, &separation_scale);
-    overlap_blend *= 1.5f;
-    camera->position_seek = position_seek;
-    camera->angle_seek = angle_seek;
+    if (camera->mode == 8) {
+        // Original case 8 (0x110de5): shelf focus and three slow sine offsets.
+        position = *shopcampos;
+        GetShopCamLookPos(&target);
+        position.x += 0.1f * NU_SIN_LUT(static_cast<i32>(NuFmod(GameTimer.time_elapsed, 9.321f) / 9.321f * 65536.0f));
+        position.y += 0.05f * NU_SIN_LUT(static_cast<i32>(NuFmod(GameTimer.time_elapsed, 5.792f) / 5.792f * 65536.0f));
+        position.z += 0.05f * NU_SIN_LUT(static_cast<i32>(NuFmod(GameTimer.time_elapsed, 7.183f) / 7.183f * 65536.0f));
+        camera->position_seek = static_cast<u8>(WORLD->current_level->cam_pos_seek);
+        camera->angle_seek = static_cast<u8>(WORLD->current_level->cam_angle_seek);
+    } else {
+        NUVEC player_camera_positions[2];
+        NUVEC player_positions[2];
+        i32 player_count = 0;
+        for (i32 i = 0; i < 2; ++i) {
+            // Original rail-camera eligibility (0x11138b..0x1113dc): an AI
+            // companion contributes to the focus only when LookAtBoth is set.
+            if (Player[i] == NULL || (static_cast<i8>(Player[i]->apiobj.flags_low) >= 0 && LookAtBoth == 0) ||
+                (netcamera != 0 && (Player[i]->apiobj.field_0x1f4 & 0x40000) != 0) ||
+                (BonusWinner != -1 && i != BonusWinner)) {
+                continue;
+            }
+            PlayerCamPos(Player[i], &player_camera_positions[player_count], &camera->pos);
+            player_positions[player_count] = Player[i]->apiobj.position;
+            ++player_count;
+        }
+        if (player_count == 0) {
+            return;
+        }
+
+        for (i32 i = 0; i < player_count; ++i) {
+            NuVecAdd(&target, &target, &player_camera_positions[i]);
+        }
+        NuVecScale(&target, &target, 1.0f / static_cast<f32>(player_count));
+
+        f32 overlap_blend = 0.0f;
+        f32 position_seek = camera->position_seek;
+        f32 angle_seek = camera->angle_seek;
+        f32 separation_scale = 0.0f;
+        SockSysCamera(WORLD->sock_sys, &camera->pos, camera->mode != camera->previous_mode, player_camera_positions,
+                      player_positions, player_count, &camera->sock_position, &position, &target, &overlap_blend,
+                      &position_seek, &angle_seek, &camera_shake, &separation_scale);
+        overlap_blend *= 1.5f;
+        camera->position_seek = position_seek;
+        camera->angle_seek = angle_seek;
+    }
+
+    if (camera->reset_blend != 0) {
+        camera->reset_blend = 0;
+        camera->blend_destination_position = position;
+        camera->blend_destination_target = target;
+    }
+    if (camera->blend_duration > camera->blend_time) {
+        if (camera->blend_curve > 0.0f) {
+            camera->blend_curve -= FRAMETIME;
+        } else {
+            camera->blend_time = MIN(camera->blend_time + FRAMETIME, camera->blend_duration);
+        }
+        if (camera->blend_duration > camera->blend_time) {
+            const f32 blend = camera->blend_time / camera->blend_duration;
+            NuVecLerp(&camera->blend_start_position, &camera->blend_destination_position, &camera->blend_end_position,
+                      blend);
+            NuVecLerp(&camera->blend_start_target, &camera->blend_destination_target, &camera->blend_end_target, blend);
+            NuVecLerp(&position, &position, &camera->blend_start_position, blend);
+        }
+    }
     camera->desired_position = position;
 
-    if (!mode_changed) {
+    const bool snap = mode_changed && camera->blend_time >= camera->blend_duration;
+    if (!snap) {
         // Target common path: clamp the socket seek contribution first, then
         // apply the independently writable stop blend to all three axes.
         const f32 seek_blend = MIN(camera->position_seek * FRAMETIME, 1.0f) * CamStopBlend;
@@ -727,7 +776,7 @@ void MoveGameCamera(GAMECAMERA_s *camera) {
     // camera position while still producing the current player focus.  Its
     // return value is not a validity gate; both paths continue into the
     // common matrix update.
-    SetGameCameraView(camera, position, target, mode_changed, camera_shake);
+    SetGameCameraView(camera, position, target, snap, camera_shake);
     camera->previous_mode = camera->mode;
 }
 
@@ -873,9 +922,6 @@ i32 MovePlayer_TWIST(GameObject_s *object) {
     return 1;
 }
 
-void MoveSubItemsLeft(i32 *, nuvec_s *, i32) {
-}
-
 void Move_SPEEDERBIKE(GameObject_s *) {
 }
 
@@ -947,9 +993,6 @@ i32 MovePlayer_CIRCLE(GameObject_s *object) {
     object->apiobj.velocity.x = SeekValF(object->apiobj.velocity.x, object->target_velocity.x, seek_rate);
     object->apiobj.velocity.z = SeekValF(object->apiobj.velocity.z, object->target_velocity.z, seek_rate);
     return 1;
-}
-
-void MoveSubItemsRight(i32 *, nuvec_s *, i32) {
 }
 
 void Move_DROIDGENERIC(GameObject_s *) {
@@ -3738,6 +3781,9 @@ static void ForcePushCode(GameObject_s *object, i32 held, i32) {
     }
 }
 
+void NewRumbleAllPlayers(f32, f32, i32, i32);
+void AddPartDebris(PARTDEBSYS_s *, i32, NUVEC *);
+
 static void ForceThrowCode(GameObject_s *object, i32 pressed, i32) {
     if (object->character_context == 0x12) {
         AlertSurroundingCreatures(object, &object->apiobj.collision_position);
@@ -4447,10 +4493,44 @@ void StartLunge(GameObject_s *object, f32 speed, f32 height) {
         SetWeaponOut(object);
 }
 
-void StartSlide(GameObject_s *, i32) {
+extern "C" {
+    extern i16 id_ATST, id_MINIATST, id_ATST_LOWRES, id_ATAT, id_MINIATAT, id_MINIATTE;
 }
 
-void CanObjSlide(GameObject_s *, i32) {
+i32 CanObjSlide(GameObject_s *object, i32) {
+    const i8 surface = object->apiobj.field_0x281;
+    if (static_cast<u8>(surface) >= 32)
+        return 0;
+    if ((TerSurface[surface].flags & 0x400) != 0) {
+        if (surface == 5 && CanMagnetClimbFn != NULL) {
+            if (CanMagnetClimbFn(object) == 0)
+                return 1;
+        } else {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+i32 StartSlide(GameObject_s *object, i32 check_contact) {
+    if (VehicleArea || object->ignore_slide_terrain || object->field_0x7a5 == 0x2b || object->field_0x7a5 == 0x1f ||
+        object->id == id_ATST || object->id == id_MINIATST || object->id == id_ATST_LOWRES || object->id == id_ATAT ||
+        object->id == id_MINIATAT || object->id == id_MINIATTE)
+        return 0;
+    i32 can_slide = CanObjSlide(object, static_cast<i8>(object->apiobj.field_0x281));
+    if (check_contact && object->apiobj.field_0x27d == 0) {
+        if (object->field_0x1084 == 0 || can_slide == 0 ||
+            !(object->apiobj.collision_position.y > object->contact_position.y))
+            return 0;
+        can_slide = CanObjSlide(object, static_cast<i8>(object->field_0x6b0));
+    }
+    if (can_slide == 0)
+        return 0;
+    object->field_0x7a5 = 0x33;
+    object->field_0xe31 = 0;
+    object->context_animation = object->apiobj.character_model->model_data_b[106] != NULL ? 106 : 5;
+    object->airborne_action_duration = 0.25f;
+    return 1;
 }
 
 i32 CanStepBack(GameObject_s *object) {

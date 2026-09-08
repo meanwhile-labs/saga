@@ -7,6 +7,7 @@
 #include "gameapi/gui/apimenu.h"
 #include "gameframework/saveload.h"
 #include "globals.h"
+#include "legoapi/world/world.h"
 #include "legoapi/legoapi_types.h"
 #include "legoapi/world/world.h"
 #include "legoapi/gizmos/traps/attractos.h"
@@ -72,6 +73,17 @@ static void GizBuildIt_FinishFn_Game(GIZBUILDIT_s *buildit) {
 extern i32 LEGOCONTEXT_HOLD;
 extern i32 LEGOCONTEXT_BLOCK;
 extern i16 LEGOACT_DEACTIVATED;
+extern void (*Tag_DrawIconFn)(GameObject_s *);
+extern i32 (*Tag_NoHiddenIconFn)(GameObject_s *);
+extern char *LEGOASCII_UP;
+extern char *ASCII_UP;
+void Tag_DrawIcon_LSW(GameObject_s *);
+static i32 Tag_NoHiddenIcon(GameObject_s *) {
+    if (WorldInfo_CurrentlyActive()->current_level == DEATHSTARESCAPEB_LDATA) {
+        return GameCam->sock_position.location.sock == 5;
+    }
+    return 0;
+}
 extern i32 LEGOCONTEXT_JUMP;
 extern i32 DoubleJump_JediSlam;
 extern i16 LEGOACT_SLAM;
@@ -87,6 +99,12 @@ static i32 CanStartHold_Game(GameObject_s *) {
 #include "legoapi/items/base/collection.h"
 #include "legoapi/items/objects/gameobjects.h"
 #include "legoapi/menus/core/text.h"
+#include "legoapi/cutscenes/cutscenes.h"
+extern i16 tCLIPi, tINTRO, tMIDTRO, tOUTRO, tENDING;
+extern i32 CutScenePlayCount;
+static i32 CutScenePlayer_Accept(CUTSCENEPLAYERCLIP *) {
+    return 1;
+}
 #include "legoapi/world/level.h"
 #include "legoapi/world/levels/episode.h"
 #include "nu2api/nucore/nustring.h"
@@ -678,7 +696,7 @@ void InitGameAfterConfig(void) {
         GOLDBRICKPOINTS = GOLDBRICKPOINTS + (u32)MissionSys->count;
     }
 
-    // Tag_DrawIconFn = Tag_DrawIcon_LSW;
+    Tag_DrawIconFn = Tag_DrawIcon_LSW;
     //_DAT_006312e8 = 0x5d;
     //_DAT_006312ea = 0x5e;
     //_DAT_0063138c = 0x5f;
@@ -708,7 +726,7 @@ void InitGameAfterConfig(void) {
     //  LEGOHINT_SHOOTCAMERAS = 0x266;
     //  LEGOHINT_PUSHBLOCKS = 0x267;
     LEGOHINT_BUILD = 0x25c;
-    //  LEGOHINT_FREEPLAYTOGGLE = 600;
+    LEGOHINT_FREEPLAYTOGGLE = 600;
     //  PUNCHGAP = 0.3;
     //  PUNCHCHARGAP = 0.3;
     //  f64Jump_AlwaysReachJump2Height = 1;
@@ -907,16 +925,15 @@ void InitGameAfterConfig(void) {
     GamePads_IgnoreInputFn = Game_IgnoreInput;
     //  Door_GoThrough_ExtraCodeFn = GoThroughDoor_ExtraCode;
     GizmoBlowup_TransformDrawFn = GizmoBlowup_TransformDraw_Game;
-    //  LEGOASCII_UP = ASCII_UP;
+    LEGOASCII_UP = ASCII_UP;
     //  LEGOASCII_DOWN = ASCII_DOWN;
     //  LEGOASCII_LEFT = ASCII_LEFT;
     //  LEGOASCII_RIGHT = ASCII_RIGHT;
     //  LEGOASCII_BIGARROW = ASCII_BIGARROW;
     //  KEEPONSCREEN_SIDESONLY = 1;
-    //  CutScenePlayer_AcceptFn = CutScenePlayer_Accept;
-    //  CutScenePlayer_Configure("cut\\clips.txt", &permbuffer_ptr, &permbuffer_end, &tCLIPi, &tINTRO, &tMIDTRO,
-    //  &tOUTRO,
-    //                           &tENDING);
+    CutScenePlayer_AcceptFn = CutScenePlayer_Accept;
+    CutScenePlayer_Configure("cut\\clips.txt", &permbuffer_ptr, &permbuffer_end, &tCLIPi, &tINTRO, &tMIDTRO, &tOUTRO,
+                             &tENDING);
     CanMagnetClimbFn = CanMagnetClimb_Game;
     //  CanPushObstaclesFn = CanPushObstacles_Game;
     //  CanSuperCarryFn = CanSuperCarry_Game;
@@ -957,7 +974,7 @@ void InitGameAfterConfig(void) {
     //  Arcade_TextCrawlParagraphs = 2;
     //  GizmoPickups_Collide2DFn = GizmoPickups_Collide2D;
     //  LEGOOBJ_DEFAULTLASTCOIN = 0xb7;
-    //  Tag_NoHiddenIconFn = Tag_NoHiddenIcon;
+    Tag_NoHiddenIconFn = Tag_NoHiddenIcon;
     //  Collection_GetSelectingPlayerIDsFn = Collection_GetSelectingPlayerIDs;
     GizmoBlowUp_SfxFn = GizmoBlowUp_Sfx;
     //  APIObjResetShadowMapRenderingFn = ResetShadowMapRenderingFn;
@@ -975,11 +992,8 @@ void InitGameAfterConfig(void) {
         GOLDBRICKPOINTS = SHOPGOLDBRICKS + -1 + GOLDBRICKPOINTS + 1;
     }
 
-    //  iVar9 = CutScenePlayer_Available();
-    //  CutScenePlayCount = 0;
-    //  if (iVar9 != 0) {
-    //      CutScenePlayCount = (u32) * (ushort *)(iVar9 + 8);
-    //  }
+    CUTSCENEPLAYER_s *clip_player = static_cast<CUTSCENEPLAYER_s *>(CutScenePlayer_Available());
+    CutScenePlayCount = clip_player != NULL ? clip_player->clip_count : 0;
     //  if (g_lowEndLevelBehaviour != 0) {
     //      Reflections_On = 0;
     //      CharClipToBlobShadows = 1;

@@ -11,13 +11,17 @@ struct HINT_s;
 #include "legoapi/world/area.h"
 #include "legoapi/characters/core/character.h"
 #include "legoapi/core/config/cheat.h"
+#include "legoapi/cutscenes/cutscenes.h"
 #include "legoapi/items/base/collection.h"
 #include "legoapi/world/levels/episode.h"
 #include "legoapi/world/level.h"
 #include "legoapi/characters/core/players.h"
+#include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/legoapi_types.h"
 #include "legoapi/props/doors/door.h"
 #include "legoapi/core/input/qrand.h"
+#include "legoapi/core/input/gamepads.h"
+#include "legoapi/characters/motion.h"
 #include "legoapi/props/system/socksys.h"
 #include "legoapi/render/fx.h"
 #include "legoapi/core/input/timer.h"
@@ -40,7 +44,6 @@ struct TouchHolder;
 void CheckForPlayersTurnedOff();
 
 extern NUVEC plr_lastpos;
-extern void *CutScenePlayer;
 
 extern void GetTopBot(GameObject_s *obj);
 extern void GameObjectDimensions(GameObject_s *obj);
@@ -222,7 +225,6 @@ static char sArcadeStartDoor[] = "ArcadeStartDoor";
 static NUVEC HubVehiclesDoorPos[2] = {{-24.21f, 0.0f, -25.36f}, {-23.63f, 0.0f, -25.68f}};
 static NUVEC HubMinikitDoorPos[2] = {{-27.14f, 0.0f, -24.92f}, {-26.77f, 0.0f, -24.94f}};
 
-void Players_InitPositions(WORLDINFO *world) __attribute__((optimize("unroll-loops")));
 void Players_InitPositions(WORLDINFO *world) {
     i32 bonus = 0;
     if (world->area != NULL) {
@@ -355,9 +357,9 @@ void Players_InitPositions(WORLDINFO *world) {
         hub_from_arcade = -1;
         if (hub_from_cutsceneplayer != 0) {
             void *av = CutScenePlayer_Available();
-            if (av != NULL && (i16)(*(i16 *)((char *)CutScenePlayer_Available() + 0xa)) != -1) {
-                void *door =
-                    Door_FindByIndex(world, -1, (i32)(*(i16 *)((char *)CutScenePlayer_Available() + 0xa)), NULL);
+            if (av != NULL && static_cast<CUTSCENEPLAYER_s *>(CutScenePlayer_Available())->return_door != -1) {
+                void *door = Door_FindByIndex(
+                    world, -1, static_cast<CUTSCENEPLAYER_s *>(CutScenePlayer_Available())->return_door, NULL);
                 HubStartDoor = door;
                 if (door != NULL) {
                     f32 *vps = *(f32 **)((char *)(*(void **)((char *)door + 0xa0)) + 0x8);
@@ -626,7 +628,6 @@ void PostResetCode(GameObject_s *obj) {
 
 static TORPEDOPACKET TorpedoPackets[16];
 
-TORPEDOPACKET *GetTorpedoPacket(void) __attribute__((optimize("unroll-loops")));
 TORPEDOPACKET *GetTorpedoPacket(void) {
     for (i32 i = 0; i < 16; i++) {
         if ((TorpedoPackets[i].field_0x1 & 1) == 0) {
@@ -644,7 +645,6 @@ void SetHitPoints(GameObject_s *obj, i32 hp) {
     }
 }
 
-void RememberPlayerIDs(i32 a, i32 b, i32 c) __attribute__((force_align_arg_pointer));
 void RememberPlayerIDs(i32 a, i32 b, i32 c) {
     if (VehicleArea != 0 || GAMEDEMO != 0) {
         return;
@@ -679,7 +679,7 @@ void *CutScenePlayer_Available(void) {
 
 void ChatterSfx(GameObject_s *g, i32 a, float b) {
     if (chattersfxwait <= 0.0f && ParticlesPerSecond(2.0f, FRAMETIME) > 0 && g->apiobj.field_0x287 == 0 &&
-        static_cast<i8>(g->player_packet[0xf1]) == -1) {
+        g->character_context == -1) {
         if (a != last_chatter_sfx || b <= 0.0f) {
             GameAudio_PlaySfxById(a, &g->apiobj.collision_position, 0, 0);
             const i32 random = qrand();
@@ -861,7 +861,166 @@ i32 Player_HasDeflectBolts(GameObject_s *object) {
     return 0;
 }
 
-void Player_ToggleCharacter(GameObject_s *, i32, i32) {
+i32 FULLDEBUGTOGGLE;
+i32 LIFTPLAYER;
+f32 TOGGLEREPEATTIME = 0.25f;
+i32 (*Player_ToggleSubCharacterFn)(GameObject_s *, i32, i32);
+void (*Player_ToggledCharacterFn)(GameObject_s *, i32);
+extern FadeSystem FadeSys;
+extern i32 LEGOHINT_FREEPLAYTOGGLE;
+void Hint_SetComplete(i32 hint_id);
+void Move_DEFAULT(GameObject_s *object);
+void GameCam_Blend(GAMECAMERA_s *camera, f32 duration, f32 curve, i32 mode);
+void GameAudio_PlaySfx(i32 sfx, NUVEC *position, i32 flags, i32 volume);
+
+void Player_ToggleCharacter(GameObject_s *object, i32 direction, i32 sound) {
+    f32 hold_time = object->input_toggle_hold_time;
+    WORLDINFO *world = WorldInfo_CurrentlyActive();
+    FULLDEBUGTOGGLE = 0;
+    if ((HUB_ADATA != NULL && HUB_ADATA == world->area) || FadeSys.fade != 0.0f ||
+        (CInfo[object->character_context].flags & 0x100) != 0 || object->field_0xcc0 != NULL || FreePlay == 0) {
+        return;
+    }
+    if ((MiniCutCam != 0 && (object->apiobj.field_0x1f8 & 0x180) == 0x80) || object->apiobj.field_0x287 != 0 ||
+        object->pad_gamepad == ViewCamGetGamePad()) {
+        object->input_toggle_hold_time = TOGGLEHOLDTIME;
+        return;
+    }
+    i16 old_id = object->id;
+    i32 left;
+    i32 right;
+    if (direction != 0) {
+        left = direction <= 0;
+        right = direction > 0;
+    } else {
+        u32 left_mask = GAMEPAD_TOGGLELEFT;
+        u32 right_mask = GAMEPAD_TOGGLERIGHT;
+        if (LIFTPLAYER != 0) {
+            left_mask &= ~GAMEPAD_LIFT;
+            right_mask &= ~GAMEPAD_LIFT;
+        }
+        GAMEPAD_s *pad = object->pad_gamepad;
+        left = pad->buttons_pressed & left_mask;
+        right = pad->buttons_pressed & right_mask;
+        if ((left != 0 && right != 0) || (left | right) == 0) {
+            if ((object->apiobj.flags_low & 0x80) == 0) {
+                return;
+            }
+            left = pad->buttons_held & left_mask;
+            right = pad->buttons_held & right_mask;
+            if ((left != 0 && right != 0) || (left | right) == 0) {
+                object->input_toggle_hold_time = TOGGLEHOLDTIME;
+                return;
+            }
+            object->input_toggle_hold_time -= FRAMETIME;
+            if (!(object->input_toggle_hold_time <= 0.0f)) {
+                return;
+            }
+            object->input_toggle_hold_time = TOGGLEREPEATTIME;
+        }
+        hold_time = object->input_toggle_hold_time;
+    }
+    if (Player_ToggleSubCharacterFn != NULL && Player_ToggleSubCharacterFn(object, left, sound) != 0) {
+        return;
+    }
+    i32 index;
+    for (index = 0; index < apicharsys->loaded_model_count; ++index) {
+        if (apicharsys->models[index].model_id == object->id) {
+            break;
+        }
+    }
+    if (index == apicharsys->loaded_model_count) {
+        return;
+    }
+    i32 attempts = 0;
+    for (;;) {
+        if (left != 0) {
+            if (--index == -1) {
+                index = apicharsys->loaded_model_count - 1;
+            }
+        } else if (++index == apicharsys->loaded_model_count) {
+            index = 0;
+        }
+        i32 id = apicharsys->models[index].model_id;
+        ++attempts;
+        i32 collected = InCollectList_Index(id, NULL, 0);
+        if ((apicharsys->models[index].flags & 1) == 0) {
+            goto next_character;
+        }
+        if (collected == -1 && (i32)GCDataList[id].flags_090 >= 0 && (GCDataList[id].flags_094[3] & 1) == 0 &&
+            !(VehicleArea != 0 && BonusArea != 0 && Cheats_CheckFlags(0x100) != 0 &&
+              (GCDataList[id].flags_094[3] & 2) != 0)) {
+            goto next_character;
+        }
+        if (VehicleArea != 0) {
+            if ((CDataList[id].model_flags & 0x2000) == 0 &&
+                !(BonusArea != 0 && (CDataList[id].model_flags & 0x4000000) != 0) &&
+                (i32)GCDataList[id].flags_090 >= 0 &&
+                !(BonusArea != 0 && Cheats_CheckFlags(0x100) != 0 && (GCDataList[id].flags_094[3] & 2) != 0)) {
+                goto next_character;
+            }
+            if (BonusArea != 0) {
+                i32 area = AreaFromMiniKitID(id);
+                if (area != -1) {
+                    if (Game_AreaSave == NULL || Game_AreaSave[area].minikit_complete == 0) {
+                        goto next_character;
+                    }
+                } else if ((i32)GCDataList[id].flags_090 >= 0 && !(BonusArea != 0 && Cheats_CheckFlags(0x100) != 0 &&
+                                                                   (GCDataList[id].flags_094[3] & 2) != 0)) {
+                    goto next_character;
+                }
+                if (object->apiobj.field_0x27f <= 16 && (TerLayer[(i8)object->apiobj.field_0x27f].flags & 1) != 0 &&
+                    GCDataList[id].field_0x28 <= 0.0f) {
+                    goto next_character;
+                }
+            }
+        } else if ((CDataList[id].model_flags & 0x2000) != 0 || (GCDataList[id].flags_090 & 0x40) != 0) {
+            goto next_character;
+        }
+        if (BonusArea == 0 || VehicleArea == 0) {
+            if ((i32)GCDataList[id].flags_090 < 0) {
+                if ((object->apiobj.flags_low & 0x80) == 0 || Cheats_CheckFlags(0x100) == 0) {
+                    goto next_character;
+                }
+            } else if ((GCDataList[id].flags_094[3] & 1) == 0 && (collected == -1 || Collection_Got(id) == 0)) {
+                goto next_character;
+            }
+        }
+        if (object->apiobj.field_0x218 != 2000000.0f && object->apiobj.field_0x220 != 2000000.0f &&
+            object->apiobj.character_data->move_fn != Move_DEFAULT &&
+            CDataList[id].bounds_max_y - CDataList[id].bounds_min_y >=
+                object->apiobj.field_0x220 - object->apiobj.field_0x218) {
+            GameAudio_PlaySfx(0x32, &object->apiobj.collision_position, 0, 0);
+            goto next_character;
+        }
+        if (attempts >= apicharsys->loaded_model_count) {
+            return;
+        }
+        if ((object->apiobj.flags_low & 0x80) != 0) {
+            Hint_SetComplete(LEGOHINT_FREEPLAYTOGGLE);
+            if (VehicleArea == 0) {
+                GameCam_Blend(GameCam, 1.0f, 0.0f, 1);
+            }
+        }
+        NewPlayerCharacter(object, id, old_id, 1);
+        RememberPlayerIDs(0, Player[0] != NULL ? Player[0]->id : -1, Player[1] != NULL ? Player[1]->id : -1);
+        if (Player_ToggledCharacterFn != NULL) {
+            Player_ToggledCharacterFn(object, left);
+        }
+        object->input_toggle_hold_time = hold_time;
+        if (sound != 0) {
+            if (left != 0) {
+                GameAudio_PlaySfx(0x23, &object->apiobj.collision_position, 0, 0);
+            } else if (right != 0) {
+                GameAudio_PlaySfx(0x24, &object->apiobj.collision_position, 0, 0);
+            }
+        }
+        return;
+    next_character:
+        if (attempts > apicharsys->loaded_model_count || id == object->id) {
+            return;
+        }
+    }
 }
 
 i32 Player_HasInvincibility(GameObject_s *object) {
@@ -1085,13 +1244,6 @@ void StarWars_AutoSetAICapabilities(GameObject_s *object);
 i32 CanPullLevers(i32 id);
 extern f32 DEFAULT_MOVE_RANGE;
 
-i32 CanPullLevers(i32 id) {
-    u32 flags = CDataList[id].model_flags;
-    if ((flags & 0x1000010) == 0x1000010)
-        return 0;
-    return (flags & 0x40088) != 0;
-}
-
 void InitPlayerAI(GameObject_s *object) {
     StarWars_AutoSetAICapabilities(object);
     u8 *b = reinterpret_cast<u8 *>(object);
@@ -1182,31 +1334,32 @@ void InitPlayerAI(GameObject_s *object) {
 }
 
 void ResetPlayerAI(GameObject_s *object) {
-    u8 *b = reinterpret_cast<u8 *>(object);
     object->field_0x109c = 0;
-    b[0x4a4] &= 0x9f;
-    b[0xefe] &= 0xdf;
-    b[0x4a5] &= 0xfd;
-    *reinterpret_cast<u32 *>(b + 0x44c) = 0;
-    *reinterpret_cast<u32 *>(b + 0x450) = 0;
-    *reinterpret_cast<i16 *>(b + 0x3e6) = -1;
-    *reinterpret_cast<i16 *>(b + 0x3e8) = -1;
-    *reinterpret_cast<u32 *>(b + 0x440) = 0;
-    b[0x1092] = 0;
-    b[0x1093] = 0;
-    *reinterpret_cast<u32 *>(b + 0x1098) = 0;
-    b[0x1094] = 0;
-    *reinterpret_cast<u32 *>(b + 0xf08) = 0;
-    *reinterpret_cast<u32 *>(b + 0xf0c) = 0;
-    *reinterpret_cast<u32 *>(b + 0xf10) = 0;
-    *reinterpret_cast<u32 *>(b + 0x4b4) = 0;
-    *reinterpret_cast<u32 *>(b + 0xf14) = 0;
-    memset(b + 0x414, 0, 0x18);
-    b[0x3f8] = 0xff;
-    b[0x3f9] = 0;
-    *reinterpret_cast<i16 *>(b + 0x3e4) = -1;
+    object->ai.movement_flags &= 0x9f;
+    object->field_0xefe &= 0xdf;
+    object->ai.field_0x1e5 &= 0xfd;
+    object->ai.intersection_connection = NULL;
+    object->ai.intersection_target_connection = NULL;
+    object->ai.animation_override_from = -1;
+    object->ai.animation_override_to = -1;
+    object->ai.field_0x180 = NULL;
+    object->field_0x1092 = 0;
+    object->field_0x1093 = 0;
+    object->field_0x1098 = 0;
+    object->field_0x1094 = 0;
+    object->field_0xf08 = 0;
+    object->field_0xf0c = 0;
+    object->field_0xf10 = 0;
+    object->ai.frame_state = 0;
+    object->field_0xf14 = 0;
+    memset(&object->ai.path_info, 0, sizeof(object->ai.path_info));
+    object->ai.current_route = 0xff;
+    object->ai.next_route = 0;
+    object->ai.inside_path_node = -1;
     AISysGetCharacterPathPos(WORLD->ai_sys, &object->apiobj, &object->ai, 0xff, 1);
 }
+
+void StarWars_AutoSetAICapabilities(GameObject_s *object);
 
 void ActivatePlayer(GameObject_s *object) {
     object->character_context = -1;
@@ -1314,7 +1467,37 @@ i32 DeactivatePlayer(GameObject_s *object, f32 duration, GameObject_s *source) {
     return 1;
 }
 
-void ResetPlayerMoves(GameObject_s *) {
+void ResetPlayerPacket(PLAYERPACKET_s *, CHARACTERDATA_s *);
+i32 GetDefaultIdle(GameObject_s *);
+void ResetCharacterIdle(GameObject_s *, i32, i32);
+void SetGameObjectCharacterData(GameObject_s *);
+void SetFlicker(GameObject_s *, f32);
+void ResetCoinPacket(COINPACKET_s *);
+
+void ResetPlayerMoves(GameObject_s *object) {
+    ResetPlayerPacket(reinterpret_cast<PLAYERPACKET_s *>(object->player_packet),
+                      reinterpret_cast<CHARACTERDATA_s *>(object->apiobj.character_data));
+    object->fall_acceleration_timer = 0.0f;
+    object->pause_input_state = 0;
+    object->apiobj.movement_direction = v000;
+    object->input_toggle_hold_time = TOGGLEHOLDTIME;
+    object->field_0xefc |= 0x80;
+    ResetCharacterIdle(object, 2, GetDefaultIdle(object));
+    if (object->apiobj.character_model->model_data_b[1] != NULL) {
+        ResetAnimPacket(&object->apiobj.anim_packet, 1);
+        SetAnimTimeRandom(object->apiobj.character_model, &object->apiobj.anim_packet);
+    } else {
+        ResetAnimPacket(&object->apiobj.anim_packet, -1);
+    }
+    object->apiobj.field_0x27e = 0;
+    object->apiobj.field_0x27d = 0;
+    SetGameObjectCharacterData(object);
+    object->spawn_protection_timer = 0.0f;
+    SetFlicker(object, 0.0f);
+    ResetCoinPacket(object->coinpacket);
+    object->apiobj.respawn_timer = 0.0f;
+    object->apiobj.flags_high &= 0xdf;
+    DrawOffsetCode(object, 1);
 }
 
 void SetToLastSafePos(GameObject_s *) {

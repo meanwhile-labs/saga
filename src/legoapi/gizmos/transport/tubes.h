@@ -8,6 +8,8 @@
 struct GameObject_s;
 struct WORLDINFO_s;
 
+i32 ObjInTube(GameObject_s *object);
+
 enum TUBE_FLAGS {
     TUBE_FLAG_ACTIVE = 1 << 0,
     TUBE_FLAG_VISIBLE = 1 << 1,
@@ -38,6 +40,7 @@ typedef struct TUBE_s {
 } TUBE;
 
 DECOMP_ASSERT(sizeof(TUBE) == 0x40, "TUBE ABI");
+DECOMP_ASSERT(offsetof(TUBE, top) == 0x28, "TUBE upper limit offset");
 DECOMP_ASSERT(offsetof(TUBE, flags) == 0x34, "TUBE flags offset");
 
 i32 Tube_InCylinder(GameObject_s *object, TUBE *tube, f32 *horizontal_distance_squared, i32 ignore_height);

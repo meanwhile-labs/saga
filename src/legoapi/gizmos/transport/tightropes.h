@@ -1,14 +1,24 @@
 #pragma once
 
+#include "decomp_assert.h"
 #include "legoapi/gizmo/base/gizmo.h"
 #include "decomp_assert.h"
 
 #ifdef __cplusplus
 
+struct GameObject_s;
+struct WORLDINFO_s;
+
 typedef struct TIGHTROPE_s {
     char name[16];
-    NUVEC start_position; // 0x10
-    NUVEC end_position;   // 0x1c
+    union {
+        NUVEC start_position;
+        NUVEC start;
+    }; // 0x10
+    union {
+        NUVEC end_position;
+        NUVEC end;
+    }; // 0x1c
     u16 field_0x28;
     u16 field_0x2a;
     u16 field_0x2c;
@@ -18,10 +28,23 @@ typedef struct TIGHTROPE_s {
     i8 field_0x32;
     u8 pad_33;
     NUVEC direction; // 0x34, normalized end minus start
-    f32 length;      // 0x40
-    u16 y_rotation;  // 0x44
-    u8 visible;
-    u8 active;
+    union {
+        f32 length;
+        f32 horizontal_length;
+    }; // 0x40
+    union {
+        u16 rotation;
+        u16 y_rotation;
+        u16 angle;
+    }; // 0x44
+    union {
+        u8 visible;
+        u8 enabled;
+    };
+    union {
+        u8 active;
+        u8 available;
+    };
 } TIGHTROPE;
 
 DECOMP_ASSERT(sizeof(TIGHTROPE) == 0x48, "TIGHTROPE ABI");
@@ -43,3 +66,5 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+void TightRope_MoveCode(GameObject_s *, i32);

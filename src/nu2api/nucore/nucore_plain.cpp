@@ -34,6 +34,8 @@ extern "C" NUGCUTLOCATORFNENTRY_s *locatorfns;
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <math.h>
+#include <float.h>
 #include "nu2api/nucore/nustring.h"
 #include "nu2api/numath/nufloat.h"
 #include "nu2api/nu3d/nutex.h"
@@ -327,9 +329,21 @@ extern "C" {
         }
         prev_lock = lock;
     }
-    void NuCameraMotionBlurEffect(void) {
+    extern nudisplayscene_s currentScene;
+    i32 NuRndrDoingScreenGrab;
+    i32 motionBlurAccumActiveThisFrame;
+
+    void NuCameraMotionBlurEffect(const NUMTX *previous, const NUMTX *current, f32 scale, f32 maximum, f32 falloff) {
+        currentScene.unknown_e4 = 1;
+        currentScene.motion_previous = *previous;
+        currentScene.motion_current = *current;
+        currentScene.motion_scale = scale;
+        currentScene.motion_maximum = maximum;
+        currentScene.motion_falloff = falloff;
     }
-    void NuCameraMotionBlurParams(void) {
+    void NuCameraMotionBlurParams(const NUMTX *current) {
+        currentScene.unknown_e0 = 1;
+        currentScene.motion_current = *current;
     }
     void NuCameraRelock(void) {
         if (prev_lock == 1)
@@ -348,7 +362,7 @@ extern "C" {
     extern i32 PS2_REZ_H;
     i32 PS2_SREZ_W = 4096;
     i32 PS2_SREZ_H = 4096;
-    static volatile i32 current_clip_scissor_to_viewport;
+    static i32 current_clip_scissor_to_viewport;
     void NuCameraSetEx(NUCAMERA *cam, i32 fast) {
         global_camera = *cam;
         FaceYDirStream(NuAtan2D(-global_camera.mtx.m20, -global_camera.mtx.m22));
@@ -755,10 +769,10 @@ extern "C" {
     // Original local helper cloned as DisplayListProcessSkin.isra.36 by GCC.
     // It appends the world transform, skin palette, and geometry calls as one
     // contiguous run in the material display list.
-    static __attribute__((optimize("O3"))) void
-    DisplayListProcessSkin(NUMTL *, NUDISPLAYLIST *list, NUDISPLAYLISTITEM *geometry,
-                           NUDISPLAYLISTITEM **first_and_last, NUMTX *world_matrix, void **transform_packet,
-                           NUMTX *skin_matrices, DEFORMERWEIGHTSARRAY *deformer_weights, i32 shadow_caster) {
+    static void DisplayListProcessSkin(NUMTL *, NUDISPLAYLIST *list, NUDISPLAYLISTITEM *geometry,
+                                       NUDISPLAYLISTITEM **first_and_last, NUMTX *world_matrix, void **transform_packet,
+                                       NUMTX *skin_matrices, DEFORMERWEIGHTSARRAY *deformer_weights,
+                                       i32 shadow_caster) {
         display_list_buffer->addr = ALIGN(display_list_buffer->addr, 0x10);
         VARIPTR *buffer = NuDisplayListLinkItems(list, 3);
 
@@ -796,11 +810,9 @@ extern "C" {
     // Lightmapped geometry carries an AE/AF/B0 setup command two entries before
     // its geometry command. Keep that setup command adjacent to the dynamic
     // transform and geometry entries when the special is submitted.
-    static __attribute__((optimize("O3"))) void DisplayListProcessLightmapped(NUMTL *, NUDISPLAYLIST *list,
-                                                                              NUDISPLAYLISTITEM *geometry,
-                                                                              NUDISPLAYLISTITEM **first_and_last,
-                                                                              NUMTX *world_matrix,
-                                                                              void **transform_packet, f32 alpha) {
+    static void DisplayListProcessLightmapped(NUMTL *, NUDISPLAYLIST *list, NUDISPLAYLISTITEM *geometry,
+                                              NUDISPLAYLISTITEM **first_and_last, NUMTX *world_matrix,
+                                              void **transform_packet, f32 alpha) {
         display_list_buffer->addr = ALIGN(display_list_buffer->addr, 0x10);
         VARIPTR *buffer = NuDisplayListLinkItems(list, 3);
 
@@ -830,9 +842,8 @@ extern "C" {
         DisplayListSetAlphaPS(first_and_last[1], first_and_last[2], alpha);
     }
 
-    __attribute__((optimize("O3"))) i32 NuDisplayListRndrSpecial(nuhspecial_s *special_handle, NUMTX *mtx, i32 skinned,
-                                                                 NUMTX *skin_matrices,
-                                                                 DEFORMERWEIGHTSARRAY *blend_values) {
+    i32 NuDisplayListRndrSpecial(nuhspecial_s *special_handle, NUMTX *mtx, i32 skinned, NUMTX *skin_matrices,
+                                 DEFORMERWEIGHTSARRAY *blend_values) {
         (void)skinned;
 
         if (special_handle == NULL || mtx == NULL) {
@@ -1958,7 +1969,8 @@ extern "C" {
     }
     void NuLineToPointDistSqr(void) {
     }
-    void NuLog2(void) {
+    f32 NuLog2(f32 value) {
+        return NuLog10(value) * 3.321928f;
     }
     void NuMiscNextPow2(void) {
     }
@@ -2006,7 +2018,27 @@ extern "C" {
     }
     void NuPlnPlnIntersect(void) {
     }
-    void NuPow(void) {
+    static f32 pow_x[32], pow_y[32], pow_rv[32];
+    static i32 pow_cache_free;
+    f32 NuPow(f32 x, f32 y) {
+        if (x == 0.0f)
+            return 0.0f;
+        static i32 first_time = 1;
+        if (first_time != 0) {
+            first_time = 0;
+            for (i32 i = 0; i < 32; ++i)
+                pow_x[i] = FLT_MAX;
+        }
+        for (i32 i = 0; i < 32; ++i) {
+            if (pow_x[i] == x && pow_y[i] == y)
+                return pow_rv[i];
+        }
+        f32 result = static_cast<f32>(exp(static_cast<double>(y) * log(static_cast<double>(x))));
+        pow_x[pow_cache_free] = x;
+        pow_y[pow_cache_free] = y;
+        pow_rv[pow_cache_free] = result;
+        pow_cache_free = (pow_cache_free + 1) & 31;
+        return result;
     }
     i32 NuPower2(i32 value) {
         i32 power = value > 127 ? 128 : 1;
@@ -2162,25 +2194,60 @@ extern "C" {
     // Rendering / materials / effects (host has GL paths elsewhere)
     // ---------------------------------------------------------------------------
 
-    void NuAccumulationMotionBlurEffect(void) {
+    void NuAccumulationMotionBlurEffect(i32 frames, f32 blend, i32 mode) {
+        currentScene.accumulation_blend = blend;
+        currentScene.unknown_174 = 1;
+        currentScene.unknown_178 = 1;
+        currentScene.accumulation_mode = mode;
+        currentScene.accumulation_frames = frames;
+        motionBlurAccumActiveThisFrame = 1;
     }
-    void NuAccumulationMotionBlurParams(void) {
+    void NuAccumulationMotionBlurParams(i32 frames, f32 blend, i32 mode) {
+        currentScene.accumulation_blend = blend;
+        currentScene.unknown_174 = 1;
+        currentScene.accumulation_frames = frames;
+        currentScene.accumulation_mode = mode;
     }
     extern nudisplayscene_s currentScene;
     void NuBackbufferCopy(i32 texture_id) {
         currentScene.unknown_214 = static_cast<u32>(texture_id);
     }
     void NuDeferredShadingRender(void) {
+        currentScene.unknown_48 = 1;
     }
-    void NuDeferredShadingSetParameterf(void) {
+    void NuDeferredShadingSetParameterf(i32 parameter, f32 value) {
+        if (parameter == 0)
+            memcpy(&currentScene.unknown_4c, &value, sizeof(value));
+        else if (parameter == 1)
+            memcpy(&currentScene.unknown_50, &value, sizeof(value));
+        else if (parameter == 2)
+            memcpy(&currentScene.unknown_54, &value, sizeof(value));
     }
-    void NuDepthOfFieldEffect(void) {
+    void NuDepthOfFieldEffect(f32 strength, f32 near_distance, f32 far_distance) {
+        currentScene.dof.strength = strength;
+        currentScene.dof.near_distance = near_distance;
+        currentScene.dof.bias = 0.0f;
+        currentScene.dof.far_distance = far_distance;
+        currentScene.dof.mode = 3;
+        currentScene.dof.enabled = NuRndrDoingScreenGrab == 0;
     }
-    void NuDepthOfFieldEffect1(void) {
+    void NuDepthOfFieldEffect1(f32 near_distance, f32 far_distance) {
+        near_distance =
+            (far_distance - near_distance) * (near_distance / (near_distance + far_distance)) + near_distance;
+        NuDepthOfFieldEffect(1.0f, (far_distance * near_distance) / ((far_distance - near_distance) + far_distance),
+                             near_distance);
     }
-    void NuDepthOfFieldEffect2(void) {
+    void NuDepthOfFieldEffect2(f32 near_distance, f32 far_distance, f32 strength) {
+        near_distance =
+            (far_distance - near_distance) * (near_distance / (near_distance + far_distance)) + near_distance;
+        NuDepthOfFieldEffect(strength, (far_distance * near_distance) / ((far_distance - near_distance) + far_distance),
+                             near_distance);
     }
-    void NuDepthOfFieldEffectEx(void) {
+    void NuDepthOfFieldEffectEx(const NuDepthOfFieldParameters *parameters) {
+        currentScene.dof = *parameters;
+        if (NuRndrDoingScreenGrab != 0) {
+            currentScene.dof.enabled = 0;
+        }
     }
     void NuEffectTexCreate1D(void) {
     }
@@ -2196,11 +2263,15 @@ extern "C" {
     }
     void NuEffectTexCreateFromNativeTex(void) {
     }
-    void NuEffectTexGetDimension(void) {
+    void NuEffectTexGetDimension(const void *texture, i32 lod, i32 *width, i32 *height) {
+        const i16 *dimensions = static_cast<const i16 *>(texture);
+        *width = (dimensions[1] >> lod) & ~1;
+        *height = (dimensions[2] >> lod) & ~1;
     }
     void NuEffectTexGetEffectFromNative(void) {
     }
-    void NuEffectTexGetLockedVP(void) {
+    void *NuEffectTexGetLockedVP(void) {
+        return NULL;
     }
     void NuEffectTexLockVP(void) {
     }
@@ -2240,23 +2311,32 @@ extern "C" {
     }
     void NuFramebufferEnableGuards(void) {
     }
-    void NuFramebufferGetAttachedTex(void) {
+    void *NuFramebufferGetAttachedTex(nuframebuffer_s *, i32, i32 *, i32 *) {
+        return NULL;
     }
-    void NuFramebufferGetBackBuffer(void) {
+    void *NuFramebufferGetBackBuffer(void) {
+        return NULL;
     }
-    void NuFramebufferGetBound(void) {
+    nuframebuffer_s *NuFramebufferGetBound(void) {
+        return NULL;
     }
-    void NuFramebufferGetDefault(void) {
+    nuframebuffer_s *NuFramebufferGetDefault(void) {
+        return NULL;
     }
-    void NuFramebufferGetFrontBuffer(void) {
+    nuframebuffer_s *NuFramebufferGetFrontBuffer(void) {
+        return NULL;
     }
-    void NuFramebufferGetHeight(void) {
+    i32 NuFramebufferGetHeight(const nuframebuffer_s *framebuffer) {
+        return *reinterpret_cast<const i32 *>(reinterpret_cast<const u8 *>(framebuffer) + 0xe0);
     }
-    void NuFramebufferGetObject(void) {
+    nuframebuffer_s *NuFramebufferGetObject(i32) {
+        return NULL;
     }
-    void NuFramebufferGetSamples(void) {
+    i32 NuFramebufferGetSamples(const nuframebuffer_s *framebuffer) {
+        return *reinterpret_cast<const i32 *>(reinterpret_cast<const u8 *>(framebuffer) + 0xe8);
     }
-    void NuFramebufferGetWidth(void) {
+    i32 NuFramebufferGetWidth(const nuframebuffer_s *framebuffer) {
+        return *reinterpret_cast<const i32 *>(reinterpret_cast<const u8 *>(framebuffer) + 0xdc);
     }
     void NuFramebufferInitEx(void) {
     }
@@ -2284,11 +2364,30 @@ extern "C" {
     }
     void NuLightMatInit(void) {
     }
-    void NuLightSpeedBlur(void) {
+    i32 speedblur_enabled = 1;
+    f32 NuLightsx, NuLightsy;
+    void NuLightSpeedBlur(i32 reuse_camera, f32 scale) {
+        static NUMTX _viewProj, _preViewProj;
+        if (speedblur_enabled == 0)
+            return;
+        currentScene.speed_blur.enabled = 1;
+        if (reuse_camera == 0) {
+            NuMtxMulH(&_preViewProj, &currentScene.speed_blur.current, NuCameraGetProjectionMtx());
+            NUMTX *projection = NuCameraGetProjectionMtx();
+            NuMtxMulH(&_viewProj, NuCameraGetViewMtx(), projection);
+        }
+        currentScene.speed_blur.previous = _viewProj;
+        currentScene.speed_blur.current = _preViewProj;
+        currentScene.speed_blur.unknown_84 = nuapi.frametime;
+        currentScene.speed_blur.scale = scale;
     }
-    void NuLightSpeedBlurOldCameraPos(void) {
+    void NuLightSpeedBlurOldCameraPos(const NUMTX *camera) {
+        currentScene.speed_blur.current = *camera;
+        NuMtxInv(&currentScene.speed_blur.current, &currentScene.speed_blur.current);
     }
-    void NuLightSpeedBlurScale(void) {
+    void NuLightSpeedBlurScale(f32 x, f32 y) {
+        NuLightsx = x;
+        NuLightsy = y;
     }
     void NuLightSpotFadeSet(u32) {
     }
@@ -2333,39 +2432,8 @@ extern "C" {
     }
     void NuLgtSetArcMat(void) {
     }
-    void NuPostBloom(void) {
-    }
-    void NuPostEffectAccumulationMotionBlur(void) {
-    }
-    void NuPostEffectBloom(void) {
-    }
-    void NuPostEffectDeferredShading(void) {
-    }
-    void NuPostEffectDepthOfField(void) {
-    }
-    void NuPostEffectDestroy(void) {
-    }
-    void NuPostEffectDisable(void) {
-    }
-    void NuPostEffectEnable(void) {
-    }
-    void NuPostEffectGetActiveDynamicLightCount(void) {
-    }
-    void NuPostEffectGetBackBuffer(void) {
-    }
-    void NuPostEffectGetDepthBuffer(void) {
-    }
-    void NuPostEffectInit(void) {
-    }
-    void NuPostEffectIsEnabled(void) {
-    }
-    void NuPostEffectMotionBlur(void) {
-    }
-    void NuPostEffectRender(void) {
-    }
-    void NuPostEffectSpeedBlur(void) {
-    }
-    void NuPostEffectTiming(void) {
+    void NuPostBloom(i32, const NuBloomParameters *parameters) {
+        currentScene.bloom = *parameters;
     }
     // This entry point is empty in the original Android binary.
     void NuRainDraw(i32) {
@@ -2479,7 +2547,13 @@ extern "C" {
     i32 NuSpecialClipTestShadowLights(NUVEC *, NUVEC *, i32) {
         return 0;
     }
-    i32 NuSpecialCompare(nuhspecial_s *, nuhspecial_s *) {
+    i32 NuSpecialCompare(nuhspecial_s *first, nuhspecial_s *second) {
+        if (first->special != NULL && first->special == second->special) {
+            return 1;
+        }
+        if (first->display_special != NULL && first->display_special == second->display_special) {
+            return 1;
+        }
         return 0;
     }
     void NuSpecialConstAlpha(i32 enabled, f32 alpha) {
@@ -2510,9 +2584,8 @@ extern "C" {
     }
     void NuSpecialDrawSmoothSkin(void) {
     }
-    __attribute__((optimize("O3"))) i32 NuSpecialDrawSmoothSkinDwa(void *special, NUMTX *skin_matrices,
-                                                                   NUMTX *world_matrix,
-                                                                   DEFORMERWEIGHTSARRAY *blend_values) {
+    i32 NuSpecialDrawSmoothSkinDwa(void *special, NUMTX *skin_matrices, NUMTX *world_matrix,
+                                   DEFORMERWEIGHTSARRAY *blend_values) {
         NuPlainSpecialHandleLayout *handle = static_cast<NuPlainSpecialHandleLayout *>(special);
         if (handle == NULL || handle->scene == NULL || handle->display_special == NULL) {
             return 0;
@@ -2707,8 +2780,6 @@ extern "C" {
     void NuSpecialVertexOffsets(void) {
     }
     void NuSpecialVertexStates(void) {
-    }
-    void NuSpeedBlurSetMotionFactors(void) {
     }
 
     void NuTimeBarSlotLastValue(void) {
@@ -3121,9 +3192,8 @@ extern "C" {
     }
     // Original @0x2f56a0. Draw rigid hierarchy pieces at their evaluated joint
     // matrices, then build skin matrices for the smooth hierarchy pieces.
-    __attribute__((optimize("O3"))) i32 NuHGobjRndrMtxDwa(nuhgobj_s *object, NUMTX *world_matrix, i32 render_count,
-                                                          i16 *render_indices, NUMTX *joint_matrices,
-                                                          void **blend_values, i32) {
+    i32 NuHGobjRndrMtxDwa(nuhgobj_s *object, NUMTX *world_matrix, i32 render_count, i16 *render_indices,
+                          NUMTX *joint_matrices, void **blend_values, i32) {
         i32 clip_state = nuspecial_clip_state;
         if (clip_state == -1) {
             clip_state = NuCameraClipHGobj(reinterpret_cast<nugscn_s *>(object), world_matrix, joint_matrices);

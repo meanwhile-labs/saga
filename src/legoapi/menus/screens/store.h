@@ -52,13 +52,17 @@ typedef struct storepack_s STOREPACK;
 extern STOREPACK StorePack[11];
 
 enum STORE_PACK_INDEX {
-    STORE_PACK_EPISODE_I = 0,
-    STORE_PACK_EPISODE_II = 1,
-    STORE_PACK_EPISODE_III = 2,
-    STORE_PACK_EPISODE_IV = 3,
-    STORE_PACK_EPISODE_V = 4,
-    STORE_PACK_BONUS_AREA = 5,
-    STORE_PACK_OPEN_ALL_AREAS = 8,
+    STORE_PACK_EPISODE_II = 0,
+    STORE_PACK_EPISODE_III = 1,
+    STORE_PACK_EPISODE_IV = 2,
+    STORE_PACK_EPISODE_V = 3,
+    STORE_PACK_EPISODE_VI = 4,
+    STORE_PACK_ARCADE = 5,
+    STORE_PACK_BONUS = 6,
+    STORE_PACK_BOUNTY = 7,
+    STORE_PACK_CHALLENGE = 8,
+    STORE_PACK_JEDI = 9,
+    STORE_PACK_SITH = 10,
 };
 
 typedef struct COLLECTID {
@@ -69,7 +73,14 @@ typedef struct COLLECTID {
     u8 can_buy;
     u8 field5_0x9;
     u16 field6_0xa;
-    char cheat_code[16];
+    union {
+        char cheat_code[16];
+        struct {
+            u8 grid_reserved[8];
+            f32 grid_x;
+            f32 grid_y;
+        };
+    };
 } COLLECTID;
 
 i32 Store_FindPack(i32 id, char *name);

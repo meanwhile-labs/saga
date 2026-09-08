@@ -13,6 +13,7 @@ original `res/libTTapp.so`.
 |---|---|---|
 | target | matching Android x86 shared object | `bazel build --config=target //src:saga_target` |
 | native | Linux diagnostic executable | `bazel build --config=native //src:saga_native` |
+| native | Linux direct gameplay smoke test | `bazel build --config=native //src:saga_smoke` |
 | native | Windows diagnostic executable | `bazel build --config=native --config=windows-mingw //src:saga_native` |
 | wasm | browser diagnostic bundle | `bazel build --config=wasm //src:saga_wasm` |
 
@@ -34,7 +35,8 @@ Native and WASM builds define `HOST_BUILD` and use the host harness.
 | [09-objdiff-cli.md](09-objdiff-cli.md) | compact per-symbol objdiff helper |
 | [10-animation-regression-audit.md](10-animation-regression-audit.md) | historical animation-related regression audit |
 | [11-animation-runtime-inventory.md](11-animation-runtime-inventory.md) | animation runtime coverage, active paths, and remaining gaps |
-| [12-gameplay-regression-audit.md](12-gameplay-regression-audit.md) | gameplay regression evidence, matching status, and unresolved paths |
+| [13-post-processing-audit.md](13-post-processing-audit.md) | directional-light intensity, retained Android post-effects, and runtime limitations |
+| [14-save-format-audit.md](14-save-format-audit.md) | save layout, serialized enums, original-binary evidence, and unresolved fields |
 
 ## Non-negotiable matching facts
 
@@ -47,8 +49,8 @@ Native and WASM builds define `HOST_BUILD` and use the host harness.
    builds disable function/data sections.
 5. Matching code uses the limited NDK system C++ runtime, not the modern STL.
 6. `HOST_BUILD` behavior is diagnostic only and must not alter the target.
-7. The target remains a shared object named `libTTapp.so`; native is the only
-   desktop executable.
+7. The target remains a shared object named `libTTapp.so`; desktop executables
+   are host-only (`saga_native` and the Linux `saga_smoke` test runner).
 
 ## Workflow in one screen
 

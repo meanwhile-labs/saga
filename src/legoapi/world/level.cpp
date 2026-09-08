@@ -22,6 +22,20 @@
 
 extern "C" char ConfigBuffer[0x10000];
 
+void LevelScriptReStoreProgress(WORLDINFO_s *world, LEVELSCRIPTPROCESS_s *process) {
+    if (world->level_progress != NULL && process != NULL && NuStrLen(process->name) != 0) {
+        for (i32 index = 0; index < 32; ++index) {
+            if (NuStrLen(world->level_progress->scripts[index].name) == 0)
+                break;
+            if (NuStrICmp(world->level_progress->scripts[index].name, process->name) == 0) {
+                for (i32 parameter = 0; parameter < 4; ++parameter)
+                    process->processor.params[parameter] = world->level_progress->scripts[index].params[parameter];
+                break;
+            }
+        }
+    }
+}
+
 // Defined in legoapi/gameobjects.cpp
 void GameAudio_PlaySfxAndSetVolume(i32, nuvec_s *, float);
 
@@ -2153,6 +2167,16 @@ void FixUpLevels(LEVELFIXUP *fixup) {
         LEVELDATA *level = Level_FindByName("E2VehicleBonus_A", NULL);
         E2VEHICLEBONUSA_LDATA = level;
         if (level != NULL) {
+        }
+    }
+
+    const i32 count = LEVELCOUNT;
+    LEVELDATA *status_level = STATUS_LDATA;
+    LEVELDATA *entry = LDataList;
+    for (i32 i = 0; i < count; ++i, ++entry) {
+        if ((entry->flags & LEVEL_STATUS) != 0 || entry == status_level) {
+            entry->update_fn = UpdateStatusScreen;
+            entry->draw_status_fn = DrawStatusScreen;
         }
     }
 }
