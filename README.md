@@ -3,7 +3,7 @@
 ![Progress](https://img.shields.io/badge/matching-25.23%25-red)
 [![Bazel build](https://github.com/ttdecomp/saga/actions/workflows/build-bazel.yaml/badge.svg)](https://github.com/ttdecomp/saga/actions/workflows/build-bazel.yaml)
 [![Discord](https://img.shields.io/discord/1467775700894224555?color=%235865F2&logo=discord&logoColor=%23FFFFFF)](https://discord.gg/2HJuMtzA7q)
-[![status & wasm build](https://img.shields.io/badge/status%20%26%20wasm%20build-click%20here-orange?style=flat)](https://ttdecomp.github.io/saga/)
+[![status & wasm build](https://img.shields.io/badge/status%20%26%20wasm%20build-click%20here-orange?style=flat)](https://opensaga.dev/)
 
 This is a decompilation of _LEGO Star Wars: The Complete Saga_, based on the
 Android x86 release. The repository builds three variants:
@@ -54,7 +54,7 @@ bazel run --config=wasm //scripts:wasm_server
 
 ## Matching progress 📊
 
-See https://ttdecomp.github.io/saga/
+See htps://opensaga.dev
 
 | Directory | Fuzzy % | Funcs % |
 |---|---:|---:|
