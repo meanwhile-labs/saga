@@ -22,8 +22,8 @@
 // until their subsystems are transcribed.  Their signatures are not yet
 // recovered, so they are left as `void(void)`.
 
-#include <string.h>
 #include <float.h>
+#include <string.h>
 #include "nu2api/numath/nufloat.h"
 
 #include "decomp.h"
@@ -33,6 +33,7 @@
 #include "nu2api/nu3d/nutexanm.h"
 #include "nu2api/nucore/nuthread.h"
 #include "nu2api/nucore/common.h"
+#include "nu2api/numath/nufloat.h"
 #include "nu2api/nu3d/nugscn.h"
 #include "nu2api/nu3d/nudlist.h"
 #include "nu2api/nu3d/numtl.h"
@@ -70,8 +71,10 @@ extern "C" {
 
 // Swap/present pacing flags (original BSS).
 volatile bool g_isBlockedInSwapScreen = false;
-i32 rndr_blend_shape_deformer_wt_cnt = 0;
-i32 rndr_blend_shape_deformer_wt_ptrs_cnt = 0;
+i32 rndr_blend_shape_deformer_wt_cnt = 0x3f00;
+i32 rndr_blend_shape_deformer_wt_ptrs_cnt = 0x800;
+static f32 rndr_blend_shape_deformer_wts[0x84000];
+static f32 *rndr_blend_shape_deformer_wt_ptrs[0x800];
 
 // ---------------------------------------------------------------------------
 // Immediate-mode 2D stream state
@@ -498,7 +501,23 @@ extern "C" void NuRndrBurstObjEnd(void) {
 }
 extern "C" void NuRndrCircle(void) {
 }
-extern "C" void NuRndrCreateBlendShapeDeformerWeightsArray(void) {
+extern "C" f32 *NuRndrCreateBlendShapeDeformerWeightsArray(i32 count) {
+    i32 size = (count + 0x20) * sizeof(f32);
+    rndr_blend_shape_deformer_wt_cnt -= size;
+    if (rndr_blend_shape_deformer_wt_cnt < 0) {
+        return NULL;
+    }
+    f32 *weights = rndr_blend_shape_deformer_wts + rndr_blend_shape_deformer_wt_cnt * 0x21;
+    memset(weights, 0, size);
+    return weights;
+}
+
+f32 **NuRndrCreateBlendShapeDWAPointers(i32 count) {
+    rndr_blend_shape_deformer_wt_ptrs_cnt -= count;
+    if (rndr_blend_shape_deformer_wt_cnt < 0) {
+        return NULL;
+    }
+    return rndr_blend_shape_deformer_wt_ptrs + rndr_blend_shape_deformer_wt_ptrs_cnt;
 }
 extern "C" void NuRndrDither(void) {
 }
@@ -748,7 +767,10 @@ extern "C" i32 NuRndrSetAmbientLightPS(const NUCOLOUR3 *colour) {
     render_state.state.lights_id++;
     return 1;
 }
-extern "C" void NuRndrSetAmbientLightSpecular(void) {
+extern "C" i32 NuRndrSetAmbientLightSpecular(const NUCOLOUR4 *colour) {
+    render_state.global_specular = colour->a;
+    NuRndrSetAmbientLightPS(reinterpret_cast<const NUCOLOUR3 *>(colour));
+    return 0;
 }
 extern "C" void NuRndrSetBlendData(void) {
 }
@@ -783,7 +805,26 @@ extern "C" void NuRndrSetGlobalMipMapBias(void) {
 extern "C" void NuRndrSetParticleRotation(NUMTX *rotation) {
     NuRndr_DebrisRotMtxPtr = rotation;
 }
-extern "C" void NuRndrStateSetSpecularLightEx(NUVEC *, NUMTX *, const NUCOLOUR4 *);
+extern "C" void NuRndrStateSetSpecularLight(const NUMTX *matrix, const NUCOLOUR3 *colour) {
+    if (matrix != nullptr) {
+        render_state.specular_mtx = *matrix;
+    }
+    if (colour != nullptr) {
+        render_state.specular_colour = *colour;
+    }
+    render_state.light_state = nullptr;
+    render_state.state.global_id++;
+    render_state.state.lights_id++;
+}
+
+extern "C" void NuRndrStateSetSpecularLightEx(const NUVEC *direction, const NUMTX *matrix, const NUCOLOUR3 *colour) {
+    render_state.specular_mtx = *matrix;
+    render_state.specular_colour = *colour;
+    render_state.specular_intensity = *direction;
+    render_state.light_state = nullptr;
+    render_state.state.global_id++;
+    render_state.state.lights_id++;
+}
 
 extern "C" void NuRndrSetWind(void) {
 }
@@ -811,18 +852,6 @@ extern "C" void NuRndrStateGetFogEnabled(void) {
 }
 extern "C" void NuRndrStateInit(void) {
 }
-extern "C" void NuRndrStateSetSpecularLight(void) {
-}
-extern "C" void NuRndrStateSetSpecularLightEx(NUVEC *direction, NUMTX *matrix, const NUCOLOUR4 *colour) {
-    render_state.specular_mtx = *matrix;
-    render_state.specular_colour.r = colour->r;
-    render_state.specular_colour.g = colour->g;
-    render_state.specular_colour.b = colour->b;
-    render_state.specular_intensity = *direction;
-    render_state.light_state = NULL;
-    render_state.state.global_id++;
-    render_state.state.lights_id++;
-}
 extern "C" void NuRndrStateUpdateCameraState(void) {
     NUMTX *projection = NuCameraGetProjectionMtx();
     NUMTX *view = NuCameraGetViewMtx();
@@ -849,6 +878,7 @@ extern "C" void NuRndrStateUpdateCameraState(void) {
 }
 
 void *RndrStateBuildKonstState(NUGLOBALRNDRSTATE *state);
+extern "C" void *RndrStateBuildFogState(NUGLOBALRNDRSTATE *state);
 
 static void *RndrStateBuildLightState(NUGLOBALRNDRSTATE *state) {
     VARIPTR *buffer = NuDisplayListGetBuffer();
@@ -917,6 +947,13 @@ extern "C" void DisplayListUpdateRenderState(void *display_list, void *state) {
         }
         NuDisplayListLinkItem(dl, 0x9a, global->camera_state);
         dl->state->camera_id = global->state.camera_id;
+    }
+    if (dl->state->fog_id != global->state.fog_id) {
+        if (global->fog_state == nullptr) {
+            global->fog_state = RndrStateBuildFogState(global);
+        }
+        NuDisplayListLinkItem(dl, 0xa6, global->fog_state);
+        dl->state->fog_id = global->state.fog_id;
     }
     if (dl->state->konst_id != global->state.konst_id) {
         if (global->konst_state == nullptr) {

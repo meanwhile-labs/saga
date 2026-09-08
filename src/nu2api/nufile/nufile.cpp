@@ -1457,26 +1457,6 @@ i32 NuPPLoadBuffer(NUFILE file, void *buf, i32 buf_size) {
 static FILEEXTINFO extensions[64];
 static i32 num_extensions;
 
-i32 NuFileExtGetExt(char *dest, i32 capacity, NUFILETYPE type) {
-    FILEEXTINFO *info = extensions;
-    while (info != NULL) {
-        if (info->platform == 4 && static_cast<signed char>(info->type) == static_cast<i32>(type)) {
-            if (static_cast<signed char>(info->len) > capacity)
-                return 0;
-            char *source = reinterpret_cast<char *>(info) + static_cast<signed char>(info->len);
-            i32 index = 0;
-            while (index < static_cast<signed char>(info->len)) {
-                --source;
-                dest[index++] = *source;
-            }
-            dest[index] = '\0';
-            return 1;
-        }
-        ++info;
-    }
-    return 0;
-}
-
 static i32 MatchExtension(char *extension, char *path_end, i32 path_len) {
     while (*extension != '\0') {
         --path_end;
@@ -1502,6 +1482,25 @@ static FILEEXTINFO *NuFileExtGetInfo(char *path, i32 path_len) {
         ++info;
     }
     return NULL;
+}
+
+i32 NuFileExtGetExt(char *dest, i32 dest_size, NUFILETYPE type) {
+    for (FILEEXTINFO *info = extensions; info->extension[0] != '\0'; ++info) {
+        if (info->platform != PC_PLATFORM || info->type != type) {
+            continue;
+        }
+        if (info->len > dest_size) {
+            return 0;
+        }
+
+        const char *source = info->extension + info->len;
+        for (i32 i = 0; i < info->len; ++i) {
+            dest[i] = *--source;
+        }
+        dest[info->len] = '\0';
+        return 1;
+    }
+    return 0;
 }
 
 i32 NuFileExtConvert(char *dest, char *path) {

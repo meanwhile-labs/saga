@@ -34,9 +34,7 @@ class NuSoundSource {
     virtual ~NuSoundSource();
 
     virtual const char *GetName() const;
-    virtual NuSoundSource *GetEncodedSource() {
-        return this;
-    }
+    virtual NuSoundSource *GetEncodedSource();
 
     void SetStreamDesc(NuSoundStreamDesc *desc);
     NuSoundStreamDesc *GetStreamDesc() const {
@@ -46,15 +44,21 @@ class NuSoundSource {
     // Source virtuals the voice layer dispatches through (the original went
     // through the source vtable; NuSoundSample / NuSoundStreamingSample and
     // NuSoundDecoder override them).
-    virtual bool OpenStream(bool loop) = 0;
-    virtual void CloseStream() = 0;
+    virtual bool OpenStream(bool loop) {
+        (void)loop;
+        return true;
+    }
+    virtual void CloseStream() {
+    }
     virtual bool IsStreamOpen() const = 0;
     virtual void RequestBuffer(bool loop, NuSoundWeakPtr<NuSoundBufferCallback> callback) = 0;
     virtual u32 GetMaxBufferSize() {
         return 0;
     }
-    virtual void Lock() = 0;
-    virtual void Unlock() = 0;
+    virtual void Lock() {
+    }
+    virtual void Unlock() {
+    }
     virtual bool IsLocked() const = 0;
     virtual u32 GetNumInitialBuffers() const;
     virtual void VoiceReference();
