@@ -66,6 +66,8 @@ void ClearAICreatures();
 // Defined in gameapi/edtools/edtoolsall.cpp, which has no header yet.
 nugspline_s *edSpline_SplineFind(nugscn_s *scene, char *name);
 
+struct JEDIBNETPACKET_s;
+
 // Jedi_B tuning and spawn tables (unmangled globals in the original).
 extern "C" {
     // Facing angle applied to each restrained hero when it is teleported.
@@ -89,7 +91,7 @@ extern "C" {
     i32 jedib_min_baddies_per_goody = 1;
     // Seed the arena's own random stream starts from, so a level lays out the same way each time.
     u32 jedib_seed = 0x11;
-    void *jedib_netpacket;
+    JEDIBNETPACKET_s *jedib_netpacket;
 }
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
@@ -511,7 +513,7 @@ struct JEDIB_s {
     GIZAIMESSAGE_s *msg_objectives_left; // 0x63b4
     GIZAIMESSAGE_s *msg_restrain[3];     // 0x63b8
     i16 wave_ids[6];                     // 0x63c4
-    u8 wave_spawned[6];                  // 0x63d0
+    char wave_spawned[6];                // 0x63d0
     u8 pad_0x63d6[2];
     GameObject_s *boss; // 0x63d8
     f32 wave_timer;     // 0x63dc
@@ -530,6 +532,17 @@ struct JEDIB_s {
 DECOMP_ASSERT(sizeof(JEDIB_s) == 0x63ec, "JEDIB_s ABI");
 
 static JEDIB_s jedi_b;
+
+// Panel state the host mirrors to clients (jedib_netpacket, SetLevelHack slot of 0x20 bytes).
+struct JEDIBNETPACKET_s {
+    i16 state; // 0x00
+    i16 phase; // 0x02
+    i16 count; // 0x04
+    i16 pad_0x06;
+    i16 ids[8];      // 0x08
+    char spawned[8]; // 0x18
+};
+DECOMP_ASSERT(sizeof(JEDIBNETPACKET_s) == 0x20, "JEDIBNETPACKET_s ABI");
 
 static JEDIB_PHASE_s jedi_b_phase1[8] = {
     {&id_DROIDEKA, "phase_droids"},
@@ -669,7 +682,7 @@ void JediB_Init(WORLDINFO_s *world) {
     }
     memset(&jedi_b, 0, sizeof(jedi_b));
     jedi_b.seed = jedib_seed;
-    jedib_netpacket = SetLevelHack(0x20);
+    jedib_netpacket = (JEDIBNETPACKET_s *)SetLevelHack(sizeof(JEDIBNETPACKET_s));
     if (netclient == 0) {
         f32 step = jedib_create_step_Normal;
         if (g_lowEndLevelBehaviour != 0) {
@@ -1197,6 +1210,95 @@ void JediB_Update(WORLDINFO_s *world) {
 }
 
 void JediB_DrawPanel(WORLDINFO_s *) {
+    if (Mission_Active(MissionSys) != NULL) {
+        return;
+    }
+    i16 ids[8];
+    char spawned[8] = {0};
+    if (netclient == 0) {
+        if (nethost != 0) {
+            jedib_netpacket->state = jedi_b.state;
+            jedib_netpacket->phase = jedi_b.phase;
+        }
+        if (jedi_b.state != 1) {
+            return;
+        }
+        switch (jedi_b.phase) {
+            case 1:
+            case 2:
+            case 3: {
+                i32 count;
+                if (jedi_b.goody_count != 0) {
+                    count = jedi_b.goody_count;
+                    if (count > 8) {
+                        count = 8;
+                    }
+                    for (i32 index = 0; index < count; index++) {
+                        ids[index] = static_cast<i16>(jedi_b.goodies[index].id);
+                        if (jedi_b.goodies[index].object == NULL) {
+                            spawned[index] = 1;
+                        }
+                    }
+                } else {
+                    if (jedi_b.phase == 1) {
+                        ids[0] = id_PADMECLAWED;
+                    } else if (jedi_b.phase == 2) {
+                        ids[0] = id_ANAKINPADAWAN;
+                    } else {
+                        ids[0] = id_OBIWANKENOBIJEDIMASTER;
+                    }
+                    count = 1;
+                }
+                DrawMeleeTargets(ids, spawned, NULL, count);
+                if (nethost != 0) {
+                    memmove(jedib_netpacket->ids, ids, count * 2);
+                    memmove(jedib_netpacket->spawned, spawned, count);
+                    jedib_netpacket->count = static_cast<i16>(count);
+                }
+                break;
+            }
+            case 4:
+            case 5:
+            case 6:
+                DrawMeleeTargets(jedi_b.wave_ids, jedi_b.wave_spawned, NULL, g_lowEndLevelBehaviour != 0 ? 4 : 6);
+                if (nethost != 0) {
+                    memmove(jedib_netpacket->ids, jedi_b.wave_ids, sizeof(jedi_b.wave_ids));
+                    memmove(jedib_netpacket->spawned, jedi_b.wave_spawned, sizeof(jedi_b.wave_spawned));
+                }
+                break;
+            case 7:
+                if (jedi_b.boss == NULL) {
+                    jedi_b.boss = (GameObject_s *)FindGameObject((i32)(i16)id_JANGOFETT, 1, 1, 0, 0);
+                    if (jedi_b.boss == NULL) {
+                        return;
+                    }
+                }
+                DrawBossHitPoints(jedi_b.boss);
+                break;
+        }
+    } else {
+        if (jedib_netpacket->state != 1) {
+            return;
+        }
+        switch (jedib_netpacket->phase) {
+            case 1:
+            case 2:
+            case 3:
+                DrawMeleeTargets(jedib_netpacket->ids, jedib_netpacket->spawned, NULL, jedib_netpacket->count);
+                break;
+            case 4:
+            case 5:
+            case 6:
+                DrawMeleeTargets(jedib_netpacket->ids, jedib_netpacket->spawned, NULL,
+                                 g_lowEndLevelBehaviour != 0 ? 4 : 6);
+                break;
+            case 7:
+                if (jedi_b.boss != NULL) {
+                    DrawBossHitPoints(jedi_b.boss);
+                }
+                break;
+        }
+    }
 }
 
 // ===========================================================================
