@@ -248,7 +248,10 @@ typedef struct AIPACKET_s {
         f32 action_target_limit;
     };
     GameObject_s *dont_avoid_character; // 0xf4
-    u8 pad_f8[0x104 - 0xf8];
+    union {
+        u8 pad_f8[0x104 - 0xf8];
+        NUVEC creature_origin; // 0xf8, cached formation position
+    };
     union {
         NUVEC movement_destination; // 0x104
         NUVEC reset_position;
@@ -460,9 +463,12 @@ typedef struct APIOBJECT_s {
     };
     NUVEC field_0x1c0;      // 0x1c0  alternate camera position used by vehicle type 0x2b
     NUVEC respawn_position; // 0x1cc
-    f32 respawn_timer;      // 0x1d8
-    f32 field_0x1dc;        // 0x1dc
-    f32 field_0x1e0;        // 0x1e0
+    union {
+        f32 respawn_timer;
+        f32 movement_stuck_time;
+    }; // 0x1d8
+    f32 field_0x1dc; // 0x1dc
+    f32 field_0x1e0; // 0x1e0
     union __attribute__((packed, aligned(4))) {
         struct {
             u32 field_0x1e4;
@@ -483,7 +489,17 @@ typedef struct APIOBJECT_s {
         u32 object_flags; // 0x1f8, complete flag word
         struct {
             u8 flags_low;
-            u8 flags_high;
+            union {
+                u8 flags_high;
+                struct {
+                    u8 : 1;
+                    u8 force_los_visible : 1;
+                    u8 skip_los_raycast : 1;
+                    u8 : 3;
+                    u8 use_cached_los : 1;
+                    u8 : 1;
+                };
+            };
             union {
                 u8 field_0x1fa;
                 struct {
@@ -566,7 +582,13 @@ typedef struct APIOBJECT_s {
     union {
         undefined field_0x28a[0x0a];
         struct {
-            u8 pad_28a[4];
+            union {
+                u8 pad_28a[4];
+                struct {
+                    u16 surface_effect_count;
+                    u16 surface_effect_id;
+                };
+            };
             union {
                 u16 movement_request_flags;
                 u16 collision_priority;
@@ -636,10 +658,16 @@ struct APIOBJECTSYS_s {
         u64 line_of_sight[64];
         u32 hostility_masks[64][2]; // 0x008, one 64-bit mask per object slot
         struct {
-            u8 state_008[0x210 - 8];
+            u8 state_008[0x208 - 8];
+            i32 los_source_index;
+            i32 los_target_index;
             union {
                 u8 flags_210;
                 u8 runtime_flags;
+                struct {
+                    u8 skip_los_raycast : 1;
+                    u8 : 7;
+                };
             };
             u8 state_211[3];
         };
@@ -648,11 +676,17 @@ struct APIOBJECTSYS_s {
 
 DECOMP_ASSERT(sizeof(APIOBJECTSYS_s) == 0x214, "APIOBJECTSYS size");
 DECOMP_ASSERT(offsetof(APIOBJECTSYS_s, flags_210) == 0x210, "APIOBJECTSYS flags offset");
+DECOMP_ASSERT(offsetof(APIOBJECTSYS_s, los_source_index) == 0x208, "APIOBJECTSYS LOS source index offset");
+DECOMP_ASSERT(offsetof(APIOBJECTSYS_s, los_target_index) == 0x20c, "APIOBJECTSYS LOS target index offset");
 DECOMP_ASSERT(offsetof(APIOBJECTSYS_s, hostility_masks) == 8, "APIOBJECTSYS hostility masks offset");
 
 extern "C" APIOBJECT *APIObjectCreate(APIOBJECTSYS_s *system);
 extern "C" void APIObjectDestroy(APIOBJECTSYS_s *system, APIOBJECT *object);
 extern "C" void APIObjectDestroyAll(APIOBJECTSYS_s *system);
+extern "C" void APIObjectLOSChecks(APIOBJECTSYS_s *system, i32 checks, i32 source_count, APIOBJECT **sources,
+                                   i32 target_count, APIOBJECT **targets, f32 ray_step);
+extern "C" i32 QuickNewRayCast(NUVEC *position, NUVEC *movement, f32 radius, i32 scan_flags, f32 max_distance,
+                               f32 step);
 extern "C" void APIObjectSetUsed(APIOBJECT *object, i32 index, i32 used);
 extern "C" void APIObjectVelocities(GameObject_s *object);
 extern "C" i32 APIObjectCollision(APIOBJECT *first, APIOBJECT *second);
@@ -802,7 +836,10 @@ typedef struct GameObject_s {
     };
     GIZMOBLOWUP_s *blowup_target; // 0x0784
     void *field_0x788;            // 0x0788
-    u8 pad_78c[0x790 - 0x78c];
+    union {
+        u8 pad_78c[0x790 - 0x78c];
+        i32 panel_use_request;
+    };
     void *big_jump_data; // 0x0790
     union {
         u16 context_x_rotation;
@@ -1037,7 +1074,10 @@ typedef struct GameObject_s {
     f32 field_0xddc;
     f32 field_0xde0; // 0x0de0
     f32 hold_timer;  // 0x0de4
-    u8 pad_de8[0xdec - 0xde8];
+    union {
+        u8 pad_de8[0xdec - 0xde8];
+        f32 ai_jump_timer;
+    };
     f32 field_0xdec; // 0x0dec
     union {
         u8 pad_df0[0xdf8 - 0xdf0];
@@ -1119,7 +1159,8 @@ typedef struct GameObject_s {
     struct MechTouchTask *touch_task;           // 0x0e4c
     MechObjectInterface *mech_object_interface; // 0x0e50
     MechAddonCollection *addons;                // 0x0e54
-    u8 pad_e58[0xe70 - 0xe58];                  // 0x0e58 .. 0x0e70
+    NUVEC field_0xe58;
+    NUVEC field_0xe64;
     union {
         nugspline_s *movement_spline; // 0x0e70
         struct {
@@ -1343,7 +1384,13 @@ typedef struct GameObject_s {
     u16 previous_movement_angle; // 0x106c
     u16 field_0x106e;            // 0x106e
     i16 id;                      // 0x1070
-    u8 pad_1072[0x1076 - 0x1072];
+    union {
+        u8 pad_1072[0x1076 - 0x1072];
+        struct {
+            i16 route_character_id;
+            i16 route_suit_index;
+        };
+    };
     i16 room_id;      // 0x1076, portal room containing the character
     i16 field_0x1078; // 0x1078 reflected/platform terrain id
     i16 field_0x107a; // 0x107a terrain id
@@ -1360,7 +1407,10 @@ typedef struct GameObject_s {
     u8 hitpoints;        // 0x108a
     i8 current_hp;       // 0x108b, signed in pickup and tag health comparisons
     i8 head_target_priority;
-    u8 pad_108d;
+    union {
+        u8 pad_108d;
+        u8 route_start_index;
+    };
     u8 field_0x108e; // 0x108e
     u8 field_0x108f;
     u8 one_at_once_player; // 0x1090 (0xff when no attack slot is assigned)
@@ -1368,7 +1418,13 @@ typedef struct GameObject_s {
     u8 field_0x1092;       // 0x1092
     u8 field_0x1093;       // 0x1093
     u8 field_0x1094;
-    u8 pad_1095[3];
+    union {
+        u8 pad_1095[3];
+        struct {
+            u8 route_search_index;
+            u8 pad_1096[2];
+        };
+    };
     u32 field_0x1098;
     union {
         u32 field_0x109c; // 0x109c
@@ -1507,6 +1563,7 @@ DECOMP_ASSERT(offsetof(APIOBJECT, collision_position) == 0x80, "APIOBJECT collis
 DECOMP_ASSERT(offsetof(APIOBJECT, antinode_special) == 0x208, "APIOBJECT antinode special offset");
 DECOMP_ASSERT(offsetof(APIOBJECT, pitch_angle) == 0x274, "APIOBJECT pitch angle offset");
 DECOMP_ASSERT(offsetof(APIOBJECT, supporting_platform_id) == 0x27a, "APIOBJECT supporting platform id offset");
+DECOMP_ASSERT(offsetof(APIOBJECT, movement_stuck_time) == 0x1d8, "APIOBJECT movement stuck timer offset");
 DECOMP_ASSERT(offsetof(APIOBJECT, model_draw_result) == 0x284, "APIOBJECT model draw result offset");
 DECOMP_ASSERT(offsetof(GameObject_s, apiobj.ai_area_mask_low) == 0x2a8, "GameObject AI area mask offset");
 DECOMP_ASSERT(offsetof(GameObject_s, sock_position) == 0x660, "GameObject socket position offset");
@@ -1582,6 +1639,11 @@ DECOMP_ASSERT(offsetof(GameObject_s, collision_target) == 0xcb8, "GameObject col
 DECOMP_ASSERT(offsetof(GameObject_s, block_attacker) == 0xce8, "GameObject block attacker offset");
 DECOMP_ASSERT(offsetof(GameObject_s, incoming_bolt) == 0xcf4, "GameObject incoming bolt offset");
 DECOMP_ASSERT(offsetof(GameObject_s, block_cooldown) == 0xdd8, "GameObject block cooldown offset");
+DECOMP_ASSERT(offsetof(GameObject_s, ai_jump_timer) == 0xde8, "GameObject AI jump timer offset");
+DECOMP_ASSERT(offsetof(GameObject_s, route_character_id) == 0x1072, "GameObject route character offset");
+DECOMP_ASSERT(offsetof(GameObject_s, route_suit_index) == 0x1074, "GameObject route suit offset");
+DECOMP_ASSERT(offsetof(GameObject_s, route_start_index) == 0x108d, "GameObject route search start offset");
+DECOMP_ASSERT(offsetof(GameObject_s, route_search_index) == 0x1095, "GameObject route search cursor offset");
 DECOMP_ASSERT(offsetof(GameObject_s, ai_combo_cooldown) == 0xd48, "GameObject AI combo cooldown offset");
 DECOMP_ASSERT(offsetof(GameObject_s, force_glow_position) == 0xc58, "GameObject force glow position offset");
 DECOMP_ASSERT(offsetof(GameObject_s, force_glow_candidate) == 0xd0c, "GameObject force glow candidate offset");

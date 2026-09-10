@@ -18,7 +18,6 @@ extern "C" NUGCUTLOCATORFNENTRY_s *locatorfns;
 //   NuIOS_GetAspectRatio           inline ratio from nuapi screen dims
 //   NuIOS_GetDeviceLanguage        @0xe3640  — exact locale ladder
 //   NuFrameEnd                     @0x2e??? — frame pacing + swap + pad tick
-//   NuStringFilterLoad             @0x???  — no-op stub (host loads elsewhere)
 // Transcribed elsewhere (stub removed here, comment left as breadcrumb):
 //   Nu360_dxClear                  → nuposteffect_plain.cpp  @0x317070
 //   NuDisplayListSwapBuffers*      → nudlist.cpp             @0x2eb5d0/0x2eaef0
@@ -37,6 +36,8 @@ extern "C" NUGCUTLOCATORFNENTRY_s *locatorfns;
 #include <math.h>
 #include <float.h>
 #include "nu2api/nucore/nustring.h"
+#include "nu2api/nucore/numem.h"
+#include "nu2api/nucore/numemory.h"
 #include "nu2api/numath/nufloat.h"
 #include "nu2api/nu3d/nutex.h"
 #include "nu2api/nu3d/nuqfnt.h"
@@ -131,8 +132,15 @@ namespace {
         i16 object_index;
     };
 
+    struct NuPlainLegacyMaterialLink {
+        NuPlainLegacyMaterialLink *next;
+        NUMTL *material;
+    };
+
     struct NuPlainLegacyObjectBoundsLayout {
-        u8 pad_00[0x0c];
+        NuPlainLegacyMaterialLink *materials;
+        f32 origin_radius;
+        u8 pad_08[4];
         NUVEC minimum;
         NUVEC maximum;
         NUVEC center;
@@ -229,19 +237,134 @@ extern "C" {
     // Camera (thin wrappers; full matrix work is in NuCameraSetEx)
     // ---------------------------------------------------------------------------
 
-    void NuCameraCalcAperture(void) {
+    f32 NuCameraCalcAperture(f32 focal_length, f32 root_fstop) {
+        f32 fstop = root_fstop * root_fstop;
+        if (fstop == 0.0f || focal_length == 0.0f)
+            return 0.0f;
+        return focal_length / fstop;
     }
-    void NuCameraCalcClipMtx(void) {
+    void NuCameraCalcClipMtx(NUCAMERACLIP *clip, NUCAMERA *camera, i32 use_cached_projection) {
+        static NUMTX vmtx;
+        if (use_cached_projection == 0 || (clip->flags & NUCAMERA_CLIP_PROJECTION_VALID) == 0) {
+            clip->flags |= NUCAMERA_CLIP_PROJECTION_VALID;
+            i32 angle = (i32)(0.5f * camera->fov * 10430.378f);
+            f32 cotangent = NuTrigTable[(angle + 0x4000) >> 1 & 0x7fff] / NuTrigTable[angle >> 1 & 0x7fff];
+            f32 far_clip = clip->far_clip;
+            f32 near_clip = clip->near_clip;
+            f32 x = clip->x_scale * camera->aspect * cotangent;
+            f32 y = cotangent * clip->y_scale;
+            memset(&clip->projection, 0, sizeof(clip->projection));
+            clip->projection.m00 = x;
+            clip->projection.m11 = y;
+            clip->projection.m22 = 2.0f / (far_clip - near_clip);
+            clip->projection.m23 = 1.0f;
+            clip->projection.m32 = -2.0f * near_clip / (far_clip - near_clip);
+        }
+        NuMtxInvVU0(&vmtx, &camera->mtx);
+        NuMtxMulVU0(&clip->clip, &vmtx, &clip->projection);
     }
-    void NuCameraCalcRootFStop(void) {
+    f32 NuCameraCalcRootFStop(f32 focal_length, f32 aperture) {
+        f32 ratio;
+        if (aperture == 0.0f || focal_length == 0.0f)
+            ratio = 0.0f;
+        else
+            ratio = focal_length / aperture;
+        return NuFsqrt(ratio);
     }
     void NuCameraClearStateBuffer(void) {
+        cam_state_count = 0;
     }
-    void NuCameraClipTestExtentsGeneric(void) {
+    i32 NuCameraClipTestExtentsGeneric(NUVEC *min, NUVEC *max, NUMTX *world_mtx, f32 far_clip, i32 flags,
+                                       f32 *min_depth) {
+        NUMTX transform;
+        NUVEC corners[8];
+        NUVEC view[8];
+        char results[8];
+        if (far_clip == 0.0f)
+            far_clip = global_camera.far_clip;
+        if (world_mtx == NULL || world_mtx == &numtx_identity)
+            transform = vmtx;
+        else
+            NuMtxMul(&transform, world_mtx, &vmtx);
+        corners[0].x = min->x;
+        corners[0].y = min->y;
+        corners[0].z = min->z;
+        corners[1].x = max->x;
+        corners[1].y = max->y;
+        corners[1].z = max->z;
+        corners[2].x = min->x;
+        corners[2].y = min->y;
+        corners[2].z = max->z;
+        corners[3].x = max->x;
+        corners[3].y = max->y;
+        corners[3].z = min->z;
+        corners[4].x = min->x;
+        corners[4].y = max->y;
+        corners[4].z = min->z;
+        corners[5].x = min->x;
+        corners[5].y = max->y;
+        corners[5].z = max->z;
+        corners[6].x = max->x;
+        corners[6].y = min->y;
+        corners[6].z = min->z;
+        corners[7].x = max->x;
+        corners[7].y = min->y;
+        corners[7].z = max->z;
+        for (i32 i = 0; i < 8; ++i)
+            NuVecMtxTransform(&view[i], &corners[i], &transform);
+        memset(results, 0, sizeof(results));
+        *min_depth = 3.4028234663852886e+38f;
+        for (i32 i = 0; i < 8; ++i) {
+            *min_depth = view[i].z < *min_depth ? view[i].z : *min_depth;
+            if ((flags & NUCAMERA_EXTENTS_SKIP_NEAR) == 0 && view[i].z < global_camera.near_clip)
+                results[i] |= NUCAMERA_OUT_NEAR;
+            if (view[i].z > far_clip)
+                results[i] |= NUCAMERA_OUT_FAR;
+            if (view[i].x < -view[i].z * zx)
+                results[i] |= NUCAMERA_OUT_LEFT;
+            if (view[i].x > view[i].z * zx)
+                results[i] |= NUCAMERA_OUT_RIGHT;
+            if (view[i].y < -view[i].z * zy)
+                results[i] |= NUCAMERA_OUT_BOTTOM;
+            if (view[i].y > view[i].z * zy)
+                results[i] |= NUCAMERA_OUT_TOP;
+        }
+        if ((results[0] & results[1] & results[2] & results[3] & results[4] & results[5] & results[6] & results[7]) !=
+            0)
+            return 0;
+        if ((results[0] | results[1] | results[2] | results[3] | results[4] | results[5] | results[6] | results[7]) ==
+            0)
+            return 1;
+        if ((flags & NUCAMERA_EXTENTS_SKIP_SCISSOR) != 0)
+            return 2;
+        memset(results, 0, sizeof(results));
+        for (i32 i = 0; i < 8; ++i) {
+            if ((flags & NUCAMERA_EXTENTS_SKIP_NEAR) == 0 && view[i].z < global_camera.near_clip)
+                results[i] |= NUCAMERA_OUT_NEAR;
+            if (view[i].z > far_clip)
+                results[i] |= NUCAMERA_OUT_FAR;
+            if (view[i].x < -view[i].z * zxs)
+                results[i] |= NUCAMERA_OUT_LEFT;
+            if (view[i].x > view[i].z * zxs)
+                results[i] |= NUCAMERA_OUT_RIGHT;
+            if (view[i].y < -view[i].z * zys)
+                results[i] |= NUCAMERA_OUT_BOTTOM;
+            if (view[i].y > view[i].z * zys)
+                results[i] |= NUCAMERA_OUT_TOP;
+        }
+        if ((results[0] & results[1] & results[2] & results[3] & results[4] & results[5] & results[6] & results[7]) !=
+            0)
+            return 1;
+        if ((results[0] | results[1] | results[2] | results[3] | results[4] | results[5] | results[6] | results[7]) ==
+            0)
+            return 1;
+        return 2;
     }
-    void NuCameraClipTestPointScissor(void) {
+    i32 NuCameraClipTestPointScissor(NUVEC *point) {
+        return NuVecClipTestPointVU0(point, &vpc_sci_mtx) == 0;
     }
-    void NuCameraClipTestPointVport(void) {
+    i32 NuCameraClipTestPointVport(NUVEC *point) {
+        return NuVecClipTestPointVU0(point, &vpc_vport_mtx) == 0;
     }
     i32 NuCameraClipTestPoints(NUVEC *points, i32 count, NUMTX *world_mtx) {
         enum CLIP_POINT_FLAGS {
@@ -288,18 +411,25 @@ extern "C" {
         }
         return common_flags;
     }
-    void NuCameraFOVToFocalLen(void) {
+    f32 NuCameraFOVToFocalLen(f32 fov) {
+        i32 angle = (i32)(0.5f * fov * 10430.378f);
+        return 18.0f / (NuTrigTable[angle >> 1 & 0x7fff] / NuTrigTable[(angle + 0x4000) >> 1 & 0x7fff]);
     }
-    void NuCameraFocalLenToFOV(void) {
+    f32 NuCameraFocalLenToFOV(f32 focal_length) {
+        return NuAtan2DAF(18.0f / focal_length, 1.0f) * 0.0000958738019107841f * 2.0f;
     }
-    void NuCameraForceFarclip(void) {
+    void NuCameraForceFarclip(i32 enabled) {
+        force_camera_farclip = enabled;
     }
-    void NuCameraGetAxes(void) {
+    void NuCameraGetAxes(NUVEC *axes) {
+        *axes = cam_axes;
     }
     NUMTX *NuCameraGetClippingMtx(void) {
         return &cmtx;
     }
-    void NuCameraGetClippingRatios(void) {
+    void NuCameraGetClippingRatios(f32 *horizontal, f32 *vertical) {
+        *horizontal = zx;
+        *vertical = zy;
     }
     NUMTX *NuCameraGetPCMtx(void) {
         return &pc_vport_mtx;
@@ -350,14 +480,34 @@ extern "C" {
         if (prev_lock == 1)
             NuCameraSet(&locked_camera);
     }
-    void NuCameraRestoreState(void) {
-    }
-    void NuCameraSaveState(void) {
+    i32 NuCameraSaveState(void) {
+        if (cam_state_count >= 16)
+            return 0;
+        NUCAMERASTATE *state = &cam_state[cam_state_count];
+        ++cam_state_count;
+        state->camera = global_camera;
+        state->view = vmtx;
+        state->projection = pmtx;
+        state->screen = smtx;
+        state->view_projection = vpmtx;
+        state->view_projection_scissor = vpc_sci_mtx;
+        state->view_projection_viewport = vpc_vport_mtx;
+        state->viewport = pc_vport_mtx;
+        state->view_projection_screen = vpsmtx;
+        state->projection_screen = psmtx;
+        state->effects = camfx;
+        state->zx = zx;
+        state->zy = zy;
+        state->zxs = zxs;
+        state->zys = zys;
+        state->planes = ClipPlanes;
+        return cam_state_count;
     }
     void NuCameraSet(NUCAMERA *cam) {
         NuCameraSetEx(cam, 0);
     }
-    void NuCameraSetAxes(void) {
+    void NuCameraSetAxes(NUVEC *axes) {
+        cam_axes = *axes;
     }
     extern i32 PS2_REZ_W;
     extern i32 PS2_REZ_H;
@@ -502,7 +652,15 @@ extern "C" {
         }
         NuMtxMulVU0(out, view, &pc_vport_mtx);
     }
-    void NuCameraTransformScreen(void) {
+    void NuCameraTransformScreen(NUVEC *screen, NUVEC *world, i32 count, NUMTX *matrix) {
+        NUMTX transform;
+        NUVEC *end = world + count;
+        if (matrix == NULL)
+            transform = vpsmtx;
+        else
+            NuMtxMulH(&transform, matrix, &vpsmtx);
+        while (world < end)
+            NuVecMtxTransformH(screen++, world++, &transform);
     }
     void NuCameraTransformScreenClip(NUVEC *screen, NUVEC *world, i32 count, NUMTX *matrix) {
         NUVEC *end = world + count;
@@ -514,9 +672,25 @@ extern "C" {
         for (; world < end; ++world, ++screen)
             NuVecMtxTransformH(screen, world, &transform);
     }
-    void NuCameraTransformScreenVU0(void) {
+    void NuCameraTransformScreenVU0(NUVEC4 *screen, NUVEC4 *world, i32 count, NUMTX *matrix) {
+        NUMTX transform;
+        NUVEC4 *end = world + count;
+        if (matrix == NULL)
+            transform = vpsmtx;
+        else
+            NuMtxMulVU0(&transform, matrix, &vpsmtx);
+        while (world < end)
+            NuVec4MtxTransformHVU0(screen++, world++, &transform);
     }
-    void NuCameraTransformView(void) {
+    void NuCameraTransformView(NUVEC *view, NUVEC *world, i32 count, NUMTX *matrix) {
+        NUMTX transform;
+        NUVEC *end = world + count;
+        if (matrix == NULL)
+            transform = vmtx;
+        else
+            NuMtxMul(&transform, matrix, &vmtx);
+        while (world < end)
+            NuVecMtxTransform(view++, world++, &transform);
     }
     void NuCameraUnlock(void) {
         if (prev_lock == 1)
@@ -1794,71 +1968,14 @@ extern "C" {
     }
     void NuDatGetFileInfo(void) {
     }
-    void NuHeapAlloc(void) {
+    void *NuMemAllocFn(u32 size) {
+        return NU_ALLOC(size, 4, 1, "", 0);
     }
-    void NuHeapAllocAligned(void) {
+    void NuMemFreeFn(void *ptr) {
+        NU_FREE(ptr);
     }
-    void NuHeapAllocAlignedNamed(void) {
-    }
-    void NuHeapAllocNamed(void) {
-    }
-    void NuHeapCreate(void) {
-    }
-    void NuHeapDefragAllocation(void) {
-    }
-    void NuHeapDestroy(void) {
-    }
-    void NuHeapFree(void) {
-    }
-    void NuHeapGetAllocatedBlockCount(void) {
-    }
-    void NuHeapGetFreeBlockCount(void) {
-    }
-    void NuHeapGetTotalAllocated(void) {
-    }
-    void NuHeapGetTotalFree(void) {
-    }
-    void NuAllocHigh(void) {
-    }
-    void NuAllocHighInit(void) {
-    }
-    void NuFreeHigh(void) {
-    }
-    void NuMemAllocFn(void) {
-    }
-    void NuMemBlkAlloc(void) {
-    }
-    void NuMemBlkCreate(void) {
-    }
-    void NuMemBlkCreateEx(void) {
-    }
-    void NuMemBlkCreateVari(void) {
-    }
-    void NuMemBlkDestroy(void) {
-    }
-    void NuMemBlkFree(void) {
-    }
-    void NuMemBlkSize(void) {
-    }
-    void NuMemCopy128(void) {
-    }
-    void NuMemCreateDiscardable(void) {
-    }
-    void NuMemDestroyDiscardable(void) {
-    }
-    void NuMemFlushDiscardable(void) {
-    }
-    void NuMemFreeFn(void) {
-    }
-    void NuMemGetPeakAllocAddr(void) {
-    }
-    void NuMemReAllocFn(void) {
-    }
-    void NuMemSetDiscardable(void) {
-    }
-    void NuMemSetExternal(void) {
-    }
-    void NuMemSetHeap(void) {
+    void *NuMemReAllocFn(void *ptr, u32 size) {
+        return NuMemoryGet()->GetThreadMem()->_BlockReAlloc(ptr, size, 4, 1, "", 0);
     }
     u8 PS2_SCRATCH_BASE[0x8000];
     static u8 *ps2_scratch_free;
@@ -1912,76 +2029,8 @@ extern "C" {
     // Math / geometry
     // ---------------------------------------------------------------------------
 
-    void NuBez3Subdiv(void) {
-    }
-    void NuBez3ToCubic(void) {
-    }
-    void NuBezierCubicPatchEvaluate(void) {
-    }
-    void NuBezierCubicPatchEvaluatePartials(void) {
-    }
-    void NuBezierCubicPatchPartialsU(void) {
-    }
-    void NuBezierCubicPatchPartialsUU(void) {
-    }
-    void NuBezierCubicPatchPartialsUUU(void) {
-    }
-    void NuBezierCubicPatchPartialsUUV(void) {
-    }
-    void NuBezierCubicPatchPartialsUUVV(void) {
-    }
-    void NuBezierCubicPatchPartialsUUVVV(void) {
-    }
-    void NuBezierCubicPatchPartialsUVV(void) {
-    }
-    void NuBezierCubicPatchPartialsV(void) {
-    }
-    void NuBezierCubicPatchPartialsVV(void) {
-    }
-    void NuBezierCubicPatchPartialsVVV(void) {
-    }
-    void NuBezierQuadraticTriangleEvaluateBarycentric(void) {
-    }
-    void NuBezierQuadraticTriangleEvaluateParametric(void) {
-    }
-    void NuBezierQuadraticTrianglePartialsUU(void) {
-    }
-    void NuBezierQuadraticTrianglePartialsUeV(void) {
-    }
-    void NuBezierQuadraticTrianglePartialsVV(void) {
-    }
-    void NuCeil(void) {
-    }
-    void NuCubicToBez3(void) {
-    }
-    void NuEquiv(void) {
-    }
-    void NuEquivTollerance(void) {
-    }
-    void NuFrsqrt(void) {
-    }
-    void NuHalfToFloat(void) {
-    }
-    void NuInfiniteLineToPointDistSqr(void) {
-    }
-    void NuInfiniteLineToPointDistSqrEx(void) {
-    }
-    void NuLineToLineDist(void) {
-    }
-    void NuLineToPointDistSqr(void) {
-    }
     f32 NuLog2(f32 value) {
         return NuLog10(value) * 3.321928f;
-    }
-    void NuMiscNextPow2(void) {
-    }
-    void NuMiscNextPow2Exp(void) {
-    }
-    void NuMiscPow2Exp(void) {
-    }
-    void NuMtxInvVU0(void) {
-    }
-    void NuMtxMulArrayVU0(void) {
     }
     // Original @0x2babf0.  The VU0 entry point is an ordinary CPU wrapper in
     // this build; animation evaluation uses it to combine an animated joint
@@ -1991,10 +2040,6 @@ extern "C" {
     }
     void NuMtxMulVU0(NUMTX *result, NUMTX *left, NUMTX *right) {
         NuMtxMulH(result, left, right);
-    }
-    void NuMtxMulnVU0(void) {
-    }
-    void NuMtxPreScaleUVU0(void) {
     }
     void NuMtxPreScaleVU0(NUMTX *matrix, NUVEC *scale) {
         NuMtxPreScale(matrix, scale);
@@ -2006,18 +2051,6 @@ extern "C" {
     }
     void NuMtxSetRotateXYZVU0(NUMTX *matrix, NUANGVEC *angles) {
         NuMtxSetRotateXYZ(matrix, angles);
-    }
-    void NuPlnDist(void) {
-    }
-    void NuPlnDist2(void) {
-    }
-    void NuPlnEqnPn(void) {
-    }
-    void NuPlnLine2(void) {
-    }
-    void NuPlnLineVU0(void) {
-    }
-    void NuPlnPlnIntersect(void) {
     }
     static f32 pow_x[32], pow_y[32], pow_rv[32];
     static i32 pow_cache_free;
@@ -2166,29 +2199,6 @@ extern "C" {
     void NuQFntWrite(void) {
     }
     void NuQFntWriteUniversalFont(void) {
-    }
-    void NuStringFilterLoad(char *path, VARIPTR *buf, VARIPTR *buf_end) {
-        (void)path;
-        (void)buf;
-        (void)buf_end;
-    }
-    void NuStringFilterBadWords(void) {
-    }
-    void NuStringFilterBadWordsW(void) {
-    }
-    void NuStringTableGetById(void) {
-    }
-    void NuStringTableGetFormat(void) {
-    }
-    void NuStringTableGetIdByName(void) {
-    }
-    void NuStringTableLoad(void) {
-    }
-    void NuStringTableLoadTXT(void) {
-    }
-    void NuStringTableSaveCharacterList(void) {
-    }
-    void NuStringTableUnload(void) {
     }
 
     // ---------------------------------------------------------------------------
@@ -2603,10 +2613,6 @@ extern "C" {
     }
     void NuSpecialFindMultiWC(void) {
     }
-    void NuSpecialForceMtl(void) {
-    }
-    void NuSpecialForceToAlpha(void) {
-    }
     void NuSpecialGetActiveShadowLights(void) {
     }
     void NuSpecialGetBounds(void *special, NUVEC *minimum, NUVEC *maximum) {
@@ -2631,8 +2637,6 @@ extern "C" {
         }
         *minimum = object->minimum;
         *maximum = object->maximum;
-    }
-    void NuSpecialGetCollision(void) {
     }
     NUMTX *NuSpecialGetDrawMtx(void *special) {
         NuPlainSpecialHandleLayout *handle = reinterpret_cast<NuPlainSpecialHandleLayout *>(special);
@@ -2687,7 +2691,35 @@ extern "C" {
         NuPlainDisplaySpecialLayout *display = static_cast<NuPlainDisplaySpecialLayout *>(handle->display_special);
         return display != NULL ? display->instance_ix : -1;
     }
-    void NuSpecialGetMtl(void) {
+    NUMTL *NuSpecialGetMtl(nuhspecial_s *special, i32 index) {
+        NuPlainLegacySpecialLayout *legacy = static_cast<NuPlainLegacySpecialLayout *>(special->special);
+        if (legacy != NULL) {
+            NuPlainLegacySceneLayout *scene = reinterpret_cast<NuPlainLegacySceneLayout *>(special->scene);
+            NuPlainLegacyInstanceBoundsLayout *instance =
+                reinterpret_cast<NuPlainLegacyInstanceBoundsLayout *>(legacy->instance);
+            NuPlainLegacyObjectBoundsLayout *object =
+                static_cast<NuPlainLegacyObjectBoundsLayout *>(scene->objects[instance->object_index]);
+            while (object->next != NULL) {
+                object = object->next;
+            }
+            NuPlainLegacyMaterialLink *link = object->materials;
+            while (index != 0) {
+                if (link == NULL) {
+                    return NULL;
+                }
+                --index;
+                link = link->next;
+            }
+            return link->material;
+        } else if (special->display_special != NULL) {
+            NUDISPLAYSPECIAL *display = special->display_special;
+            i32 level = 0;
+            while (display->clip_range[level] != 0.0f) {
+                ++level;
+            }
+            return special->scene->display_list->mtls[display->clip_objects[level].material_ids[index]];
+        }
+        return NULL;
     }
     NUMTX *NuSpecialGetMtx(void *special) {
         NuPlainSpecialHandleLayout *handle = reinterpret_cast<NuPlainSpecialHandleLayout *>(special);
@@ -2696,10 +2728,28 @@ extern "C" {
         }
         return static_cast<NUMTX *>(handle->special);
     }
-    f32 NuSpecialGetOriginRadius(void *) {
-        return 0.0f;
+    f32 NuSpecialGetOriginRadius(void *special) {
+        NuPlainSpecialHandleLayout *handle = static_cast<NuPlainSpecialHandleLayout *>(special);
+        NuPlainLegacySpecialLayout *legacy = static_cast<NuPlainLegacySpecialLayout *>(handle->special);
+        if (legacy != NULL) {
+            NuPlainLegacySceneLayout *scene = reinterpret_cast<NuPlainLegacySceneLayout *>(handle->scene);
+            NuPlainLegacyInstanceBoundsLayout *instance =
+                reinterpret_cast<NuPlainLegacyInstanceBoundsLayout *>(legacy->instance);
+            NuPlainLegacyObjectBoundsLayout *object =
+                static_cast<NuPlainLegacyObjectBoundsLayout *>(scene->objects[instance->object_index]);
+            return object->origin_radius;
+        }
+        return NuVecMag(&static_cast<NuPlainDisplaySpecialLayout *>(handle->display_special)->center) +
+               static_cast<NuPlainDisplaySpecialLayout *>(handle->display_special)->radius;
     }
-    NUVEC *NuSpecialGetPos(void *) {
+    NUVEC *NuSpecialGetPos(void *special) {
+        NuPlainSpecialHandleLayout *handle = static_cast<NuPlainSpecialHandleLayout *>(special);
+        if (handle->display_special != NULL) {
+            return reinterpret_cast<NUVEC *>(&static_cast<NUMTX *>(handle->display_special)->m30);
+        }
+        if (handle->special != NULL) {
+            return reinterpret_cast<NUVEC *>(&static_cast<NUMTX *>(handle->special)->m30);
+        }
         return NULL;
     }
     void NuSpecialGetRadius(void *special, NUVEC *position, f32 *radius) {
@@ -2731,22 +2781,59 @@ extern "C" {
     }
     void NuSpecialList(void) {
     }
-    void NuSpecialMtl(void) {
-    }
-    void NuSpecialMtlMap(void) {
-    }
-    void NuSpecialNumMtls(void) {
+    i32 NuSpecialNumMtls(nuhspecial_s *special) {
+        NuPlainLegacySpecialLayout *legacy = static_cast<NuPlainLegacySpecialLayout *>(special->special);
+        if (legacy != NULL) {
+            NuPlainLegacySceneLayout *scene = reinterpret_cast<NuPlainLegacySceneLayout *>(special->scene);
+            NuPlainLegacyInstanceBoundsLayout *instance =
+                reinterpret_cast<NuPlainLegacyInstanceBoundsLayout *>(legacy->instance);
+            NuPlainLegacyObjectBoundsLayout *object =
+                static_cast<NuPlainLegacyObjectBoundsLayout *>(scene->objects[instance->object_index]);
+            while (object->next != NULL) {
+                object = object->next;
+            }
+            i32 count = 0;
+            for (NuPlainLegacyMaterialLink *link = object->materials; link != NULL; link = link->next) {
+                ++count;
+            }
+            return count;
+        }
+        if (special->display_special != NULL) {
+            NUDISPLAYSPECIAL *display = special->display_special;
+            i32 level = 0;
+            while (display->clip_range[level] != 0.0f) {
+                ++level;
+            }
+            return display->clip_objects[level].nmaterials;
+        }
+        return 0;
     }
     void NuSpecialSetAlphaTest(void) {
     }
-    void NuSpecialSetBounds(void) {
+    void NuSpecialSetBounds(nuhspecial_s *special, NUVEC *minimum, NUVEC *maximum) {
+        NuPlainLegacySpecialLayout *legacy = static_cast<NuPlainLegacySpecialLayout *>(special->special);
+        if (legacy != NULL) {
+            NuPlainLegacySceneLayout *scene = reinterpret_cast<NuPlainLegacySceneLayout *>(special->scene);
+            NuPlainLegacyInstanceBoundsLayout *instance =
+                reinterpret_cast<NuPlainLegacyInstanceBoundsLayout *>(legacy->instance);
+            NuPlainLegacyObjectBoundsLayout *object =
+                static_cast<NuPlainLegacyObjectBoundsLayout *>(scene->objects[instance->object_index]);
+            while (object != NULL) {
+                object->minimum = *minimum;
+                object->maximum = *maximum;
+                object = object->next;
+            }
+        } else {
+            NuPlainDisplaySpecialLayout *display =
+                reinterpret_cast<NuPlainDisplaySpecialLayout *>(special->display_special);
+            display->min = *minimum;
+            display->max = *maximum;
+        }
     }
     i32 NuSpecialSetClipping(i32 enabled, i32 state) {
         i32 previous = nuspecial_clip_state;
         nuspecial_clip_state = enabled != 0 ? state : -1;
         return previous;
-    }
-    void NuSpecialSetCollision(void) {
     }
     void NuSpecialSetDrawMtx(void *special, NUMTX *mtx) {
         NuPlainSpecialHandleLayout *handle = reinterpret_cast<NuPlainSpecialHandleLayout *>(special);
@@ -2766,19 +2853,7 @@ extern "C" {
             display->flags |= 0x400;
         }
     }
-    void NuSpecialSetDrawPos(void *, void *) {
-    }
-    void NuSpecialSetInstAnimTime(void) {
-    }
-    void NuSpecialSetInstanceMtx(void) {
-    }
-    void NuSpecialSetMtx(void) {
-    }
-    void NuSpecialSetOnScreen(void) {
-    }
     void NuSpecialSetRenderPlane(void) {
-    }
-    void NuSpecialTestAnim(void) {
     }
     void NuSpecialVertexOffsets(void) {
     }
@@ -3182,10 +3257,6 @@ extern "C" {
     }
     void NuHGobjPOIMtxFromIX(void) {
     }
-    void NuHGobjRestoreEvaluation(void) {
-    }
-    void NuHGobjRestrictEvaluation(void) {
-    }
     i32 NuHGobjReversibleCharacters(i32 enabled) {
         i32 previous = nuapi.reversible_characters;
         nuapi.reversible_characters = enabled;
@@ -3274,7 +3345,93 @@ extern "C" {
         NuSpecialClearShadowClipTestResults();
         return drawn;
     }
-    void NuHGobjRndrRandShadowSurfacePoints(void) {
+    u32 NuWindRand(void);
+    i32 NuHGobjRndrRandShadowSurfacePoints(nuhgobj_s *object, NUMTX *world_matrix, NUMTX *joint_matrices,
+                                          i32 count, NUVEC *positions, i32 exclusion_mask) {
+        if (NuCameraClipTestExtents(&object->bounds_min, &object->bounds_max, world_matrix, 0.0f, 0) == 0) {
+            return 0;
+        }
+        nuhgobjshadowgroup_s *groups = object->shadow_groups;
+        if (groups == NULL || object->suppress_shadow_surface_points != 0) {
+            return 1;
+        }
+        i32 total = 0;
+        for (nuhgobjshadowgroup_s *group = groups; group->joint_index != 0xff; ++group) {
+            for (i32 i = 0; i < group->ellipse_count; ++i) {
+                if ((*reinterpret_cast<u32 *>(&group->ellipses[i][4]) & 1) == 0) {
+                    ++total;
+                }
+            }
+            for (i32 i = 0; i < group->cylinder_count; ++i) {
+                if ((*reinterpret_cast<u32 *>(&group->cylinders[i][4]) & 1) == 0) {
+                    ++total;
+                }
+            }
+        }
+        if (total == 0) {
+            return 1;
+        }
+        i16 counts[256];
+        for (i32 i = 0; i < total; ++i) {
+            counts[i] = 0;
+        }
+        for (i32 i = 0; i < count; ++i) {
+            ++counts[(static_cast<i32>(NuWindRand()) >> 8) % total];
+        }
+        if (count > 0) {
+            groups = object->shadow_groups;
+        }
+        i32 index = 0;
+        NUMTX combined;
+        NUVEC4 point;
+        for (nuhgobjshadowgroup_s *group = groups; group->joint_index != 0xff; ++group) {
+            if (count == 0) {
+                continue;
+            }
+            i32 matrix_ready = 0;
+            for (i32 i = 0; i < group->ellipse_count; ++i) {
+                if (exclusion_mask != 0 && (*reinterpret_cast<u32 *>(&group->ellipses[i][4]) & exclusion_mask) != 0) {
+                    continue;
+                }
+                i32 n = counts[index];
+                if (n != 0) {
+                    if (matrix_ready == 0) {
+                        NuMtxMulVU0(&combined, &joint_matrices[group->joint_index], world_matrix);
+                    }
+                    for (i32 j = 0; j < n; ++j) {
+                        NuRndrCalcRandEllipsePos(&point, &combined, reinterpret_cast<NUVEC *>(group->ellipses[i]));
+                        --count;
+                        positions[count].x = point.x;
+                        positions[count].y = point.y;
+                        positions[count].z = point.z;
+                    }
+                    matrix_ready = 1;
+                }
+                ++index;
+            }
+            for (i32 i = 0; i < group->cylinder_count; ++i) {
+                // Original 0x2cfcf7 uses the ellipse table for this filter too.
+                if (exclusion_mask != 0 && (*reinterpret_cast<u32 *>(&group->ellipses[i][4]) & exclusion_mask) != 0) {
+                    continue;
+                }
+                i32 n = counts[index];
+                if (n != 0) {
+                    if (matrix_ready == 0) {
+                        NuMtxMulVU0(&combined, &joint_matrices[group->joint_index], world_matrix);
+                    }
+                    for (i32 j = 0; j < n; ++j) {
+                        NuRndrCalcRandCylinderPos(&point, &combined, reinterpret_cast<NUVEC *>(group->cylinders[i]));
+                        --count;
+                        positions[count].x = point.x;
+                        positions[count].y = point.y;
+                        positions[count].z = point.z;
+                    }
+                    matrix_ready = 1;
+                }
+                ++index;
+            }
+        }
+        return 1;
     }
     void NuHGobjSetClippingRootTrackerOverride(void) {
     }
@@ -3714,168 +3871,10 @@ extern "C" {
     // Viewport
     // ---------------------------------------------------------------------------
 
-    void NuViewPortSet(void) {
-    }
-    void NuVpGetClippingMtx(void) {
-    }
-    void NuVpGetCurrent(void) {
-    }
-    void NuVpGetCurrent2(void) {
-    }
-    void NuVpGetRegions(void) {
-    }
-    void NuVpPixelHeight(void) {
-    }
-    void NuVpPixelWidth(void) {
-    }
-    void NuVpSetCentre(void) {
-    }
-    void NuVpSetClipping(void) {
-    }
-    void NuVpSetCurrent(void) {
-    }
-    void NuVpSetCurrent2(void) {
-    }
-    void NuVpSetPosition(void) {
-    }
-    void NuVpSetPosition2(void) {
-    }
-    void NuVpSetSize(void) {
-    }
-    void NuVpSetSize2(void) {
-    }
-    void NuVpSetZRange(void) {
-    }
-    void NuVpVirtualHeight(void) {
-    }
-    void NuVpVirtualWidth(void) {
-    }
-
     // ---------------------------------------------------------------------------
     // Strings / conversion / Unicode
     // ---------------------------------------------------------------------------
 
-    void NuAToFW(void) {
-    }
-    void NuAToIW(void) {
-    }
-    char *NuIToA(i32 value, char *buffer, i32 radix) {
-        if (buffer == NULL || radix < 2 || radix > 36) {
-            return buffer;
-        }
-
-        static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-        char reversed[34];
-        i32 length = 0;
-        const bool negative = value < 0 && radix == 10;
-        u32 magnitude = negative ? 0u - static_cast<u32>(value) : static_cast<u32>(value);
-        do {
-            reversed[length++] = digits[magnitude % static_cast<u32>(radix)];
-            magnitude /= static_cast<u32>(radix);
-        } while (magnitude != 0);
-        if (negative) {
-            reversed[length++] = '-';
-        }
-        for (i32 i = 0; i < length; ++i) {
-            buffer[i] = reversed[length - i - 1];
-        }
-        buffer[length] = '\0';
-        return buffer;
-    }
-    void NuIToAW(void) {
-    }
-    void NuIsAl(void) {
-    }
-    void NuIsAlW(void) {
-    }
-    void NuSPrintfW(void) {
-    }
-    void NuStrCatW(void) {
-    }
-    void NuStrChrW(void) {
-    }
-    void NuStrCmpW(void) {
-    }
-    void NuStrCpyWC(void) {
-    }
-    void NuStrFindPosU(void) {
-    }
-    void NuStrFixExt(void) {
-    }
-    void NuStrGetExt(void) {
-    }
-    void NuStrGetFilenameNoExt(void) {
-    }
-    void NuStrGetPath(void) {
-    }
-    void NuStrICmpWC(void) {
-    }
-    void NuStrIStrW(void) {
-    }
-    void NuStrLenU(void) {
-    }
-    void NuStrLwr(void) {
-    }
-    void NuStrLwrW(void) {
-    }
-    i32 NuStrNCat(char *str, const char *ext, i32 n) {
-        while (*str != '\0') {
-            ++str;
-        }
-
-        i32 copied = 0;
-        if (ext != NULL) {
-            do {
-                if (n == 0) {
-                    break;
-                }
-                *str++ = *ext;
-                ++copied;
-                --n;
-            } while (*ext++ != '\0');
-        }
-        return copied;
-    }
-    void NuStrNCatW(void) {
-    }
-    void NuStrNCmpW(void) {
-    }
-    void NuStrNCpyW(void) {
-    }
-    void NuStrNICmpW(void) {
-    }
-    void NuStrRChrW(void) {
-    }
-    void NuStrStrW(void) {
-    }
-    void NuStrSubstituteString(void) {
-    }
-    void NuStrToL(void) {
-    }
-    void NuStrToLW(void) {
-    }
-    void NuStrToLower(void) {
-    }
-    void NuStrTrap(void) {
-    }
-    void NuStrUprW(void) {
-    }
-    void NuStringTok(void) {
-    }
-    void NuUTF8ToUnicode(void) {
-    }
-    void NuFParCreateGivenFH(void) {
-    }
-    void NuFParGetOptionalFloat(void) {
-    }
-    void NuFParGetOptionalInt(void) {
-    }
-    void NuFParGetPos(void) {
-    }
-    void NuFParPushComCTX2(void) {
-    }
-    void NuFParSetPos(void) {
-    }
     void NuQTAddElement(void) {
     }
     void NuQTCreate(void) {
@@ -3889,63 +3888,16 @@ extern "C" {
     // Containers / lists / params
     // ---------------------------------------------------------------------------
 
-    void NuLinkedListCheck(void) {
-    }
-    void NuLinkedListInsertAfter(void) {
-    }
-    void NuLinkedListInsertBefore(void) {
-    }
-    void NuLstAllocAfter(void) {
-    }
-    void NuLstAllocBefore(void) {
-    }
-    void NuLstAllocFree(void) {
-    }
-    void NuLstAtachHead(void) {
-    }
-    void NuLstAttachTail(void) {
-    }
-    void NuLstGetFree(void) {
-    }
-    void NuLstGetPrev(void) {
-    }
-    void NuLstMoveNext(void) {
-    }
-    void NuLstMovePrev(void) {
-    }
-
     // ---------------------------------------------------------------------------
     // Debug / error / html / profiling
     // ---------------------------------------------------------------------------
 
-    void NuErrorCheck(void) {
-    }
-
-    void NuErrorSetFilter(void) {
-    }
     void NuErrorSleep(void) {
     }
 
-    void NuDebugMsgProlog(void) {
-    }
-    void NuDebugMsgPrologTTY(void) {
-    }
-
-    void NuWarningProlog(void) {
-    }
-    void NuHtmlBanner(void) {
-    }
-    void NuHtmlBitmap(void) {
-    }
-    void NuHtmlEnd(void) {
-    }
     void NuHtmlHBarGraph(void) {
     }
     void NuHtmlHLineGraph(void) {
-    }
-    void NuHtmlHeading2(void) {
-    }
-    void NuHtmlHeading3(void) {
     }
     void NuHtmlVBarGraph(void) {
     }
@@ -3966,7 +3918,9 @@ extern "C" {
     }
     void NuTimeBarInit(void) {
     }
-    static i32 NuTimeBar_PeakReset asm("_ZL19NuTimeBar_PeakReset");
+    extern "C++" {
+        static i32 NuTimeBar_PeakReset;
+    }
     void NuTimeBarResetPeaks(void) {
         NuTimeBar_PeakReset = 1;
     }
@@ -3976,30 +3930,18 @@ extern "C" {
     }
     void NuTimeBarSetScaleY(void) {
     }
-    void NuSetDebugMsgHandler(void) {
-    }
-    void NuSetErrorMsgHandler(void) {
-    }
-    void NuSetWarningMsgHandler(void) {
-    }
 
     // ---------------------------------------------------------------------------
     // Time
     // ---------------------------------------------------------------------------
 
-    void NuTimeForceFrameTime(void) {
-    }
     void NuTimeGetSinceStartFrame(void) {
     }
     void NuTimeGetStartFrame(void) {
     }
     void NuTimeGetTime(void) {
     }
-    void NuTimeScanlines(void) {
-    }
     void NuTimeStartFrame(void) {
-    }
-    void NuTimeWait(void) {
     }
 
     // ---------------------------------------------------------------------------
@@ -4010,14 +3952,14 @@ extern "C" {
     }
     void NuEnableVBlankE(void) {
     }
+#ifndef ANDROID
     void NuGetCurrentThreadId(void) {
     }
+#endif
+#ifndef ANDROID
     void NuThreadCreate(void) {
     }
-    void NuThreadSignalRecieve(void) {
-    }
-    void NuThreadSignalSend(void) {
-    }
+#endif
     void NuPause(void) {
     }
     void NuPhoneOSMessagePost(void) {
@@ -4026,7 +3968,10 @@ extern "C" {
     }
     void NuPhysicalProtect(void) {
     }
-    void NuSetGetHGObjFromIndxFn(void) {
+    NUGCUTSCENEGETHGOBJFN NuCutSceneGetHGObj;
+
+    void NuSetGetHGObjFromIndxFn(NUGCUTSCENEGETHGOBJFN function) {
+        NuCutSceneGetHGObj = function;
     }
     void NuSetPadDemoEndButtons(u32) {
     }
@@ -4035,7 +3980,10 @@ extern "C" {
     void NuSetCutSceneCharacterCreateDataFn(NUGCUTSCENECHARACTERCREATEDATAFN function) {
         NuCutSceneCharacterCreateData = function;
     }
-    void NuSetCutSceneCharacterDestroyDataFn(void) {
+    NUGCUTSCENECHARACTERDESTROYDATAFN NuCutSceneCharacterDestroyData;
+
+    void NuSetCutSceneCharacterDestroyDataFn(NUGCUTSCENECHARACTERDESTROYDATAFN function) {
+        NuCutSceneCharacterDestroyData = function;
     }
     void NuSetCutSceneCharacterEvalFn(NUGCUTSCENECHARACTEREVALFN function) {
         NuCutSceneCharacterEval = function;
@@ -4076,12 +4024,6 @@ extern "C" {
     // Spline / online / net / other gameplay support
     // ---------------------------------------------------------------------------
 
-    void NuSplineFindAllSub(void) {
-    }
-    void NuSplineFindNextBeg(void) {
-    }
-    void NuSplineGetRandomPoint(void) {
-    }
     void NuSplineList(void) {
     }
     void NuOnlineAchievementAchieved(void) {
@@ -4096,15 +4038,13 @@ extern "C" {
     }
     void NuOnlineHasPlayerDownloadedPS(void) {
     }
-    void NuOnlineHasPlayerSignedIn(void) {
-    }
     void NuOnlineHasPlayerSignedInEx(void) {
     }
     void NuOnlineHasPlayerSignedInExPS(void) {
     }
-    void NuOnlineHasPlayerSignedInPS(void) {
-    }
-    void NuOnlineInit(void) {
+    extern i32 g_signedinUser;
+    i32 NuOnlineHasPlayerSignedInPS(void) {
+        return g_signedinUser != -1;
     }
     void NuOnlineInitPS(void) {
     }
@@ -4154,12 +4094,6 @@ extern "C" {
     }
     void NuOnlineSignInPlayerPS(void) {
     }
-    void NuMcCheckCardFormatted(void) {
-    }
-    void NuMcCheckCardFreeSpace(void) {
-    }
-    void NuMcCheckCardPresent(void) {
-    }
     void NuMcCloseDir(void) {
     }
     void NuMcCreateDir(void) {
@@ -4182,10 +4116,6 @@ extern "C" {
     void NuRegisterEndFrameCallBackFn(void (*callback)(void)) {
         nuapi_endframe_callbackfn = callback;
     }
-    void NuRenderThreadDestroy(void) {
-    }
-    void NuRenderThreadIsCurrentThread(void) {
-    }
     void NuRndIsReflectionGobj(void) {
     }
     void NuRndIsShadowReceiveRenderGobj(void) {
@@ -4201,8 +4131,6 @@ extern "C" {
     }
     void NuFpExceptionMask(void) {
     }
-    void NuVSPrintf(void) {
-    }
     void Nu360GetCommandLine(void) {
     }
 
@@ -4210,51 +4138,37 @@ extern "C" {
     // PS2 / Xbox legacy shims
     // ---------------------------------------------------------------------------
 
-    struct nupad_s;
-    struct nuframebuffer_s;
-    struct nushaderobject_s;
-    union variptr_u;
-
-    void NuXboxLiveInit() __asm__("_Z14NuXboxLiveInitv");
-    void NuXboxLiveInit() {
-    }
-    void NuPs2PadDemoEnd() __asm__("_Z15NuPs2PadDemoEndv");
-    void NuPs2PadDemoEnd() {
-    }
-    i32 NuPs2GetLanguage() __asm__("_Z16NuPs2GetLanguagev");
-    i32 NuPs2GetLanguage() {
-        return 0;
-    }
-    void NuPs2PadSetMotors(nupad_s *, i32, i32) __asm__("_Z17NuPs2PadSetMotorsP7nupad_sii");
-    void NuPs2PadSetMotors(nupad_s *, i32, i32) {
-    }
-    void Nu360ConfigureSMBSharing(char **) __asm__("_Z24Nu360ConfigureSMBSharingPPc");
-    void Nu360ConfigureSMBSharing(char **) {
-    }
-    void NuFramebuffer360EndZPass() __asm__("_Z24NuFramebuffer360EndZPassv");
-    void NuFramebuffer360EndZPass() {
-    }
-    bool NuFramebuffer360HasZPass() __asm__("_Z24NuFramebuffer360HasZPassv");
-    bool NuFramebuffer360HasZPass() {
-        return false;
-    }
-    void NuFramebuffer360BeginZPass(i32) __asm__("_Z26NuFramebuffer360BeginZPassi");
-    void NuFramebuffer360BeginZPass(i32) {
-    }
-    i32 NuFramebuffer360GetTileCount(nuframebuffer_s *) __asm__("_Z28NuFramebuffer360GetTileCountP15nuframebuffer_s");
-    i32 NuFramebuffer360GetTileCount(nuframebuffer_s *) {
-        return 0;
-    }
-    void NuShaderObject360LoadShader(nushaderobject_s *) __asm__("_Z27NuShaderObject360LoadShaderP16nushaderobject_s");
-    void NuShaderObject360LoadShader(nushaderobject_s *) {
-    }
-    void NuShaderObject360LoadPackFile(char *, variptr_u *,
-                                       char *) __asm__("_Z29NuShaderObject360LoadPackFilePcP9variptr_uS0_");
-    void NuShaderObject360LoadPackFile(char *, variptr_u *, char *) {
-    }
-    void
-    NuShaderObject360UnloadShader(nushaderobject_s *) __asm__("_Z29NuShaderObject360UnloadShaderP16nushaderobject_s");
-    void NuShaderObject360UnloadShader(nushaderobject_s *) {
-    }
-
 } // extern "C"
+
+struct nupad_s;
+struct nuframebuffer_s;
+struct nushaderobject_s;
+union variptr_u;
+
+void NuXboxLiveInit() {
+}
+void NuPs2PadDemoEnd() {
+}
+i32 NuPs2GetLanguage() {
+    return 0;
+}
+void NuPs2PadSetMotors(nupad_s *, i32, i32) {
+}
+void Nu360ConfigureSMBSharing(char **) {
+}
+void NuFramebuffer360EndZPass() {
+}
+bool NuFramebuffer360HasZPass() {
+    return false;
+}
+void NuFramebuffer360BeginZPass(i32) {
+}
+i32 NuFramebuffer360GetTileCount(nuframebuffer_s *) {
+    return 0;
+}
+void NuShaderObject360LoadShader(nushaderobject_s *) {
+}
+void NuShaderObject360LoadPackFile(char *, variptr_u *, variptr_u) {
+}
+void NuShaderObject360UnloadShader(nushaderobject_s *) {
+}

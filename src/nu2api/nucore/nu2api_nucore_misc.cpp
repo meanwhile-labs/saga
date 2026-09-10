@@ -45,19 +45,10 @@ extern "C" void NuAnimBuffEvaluate_3(nuanimbuff_s *buffer, nuhgobj_s *object, NU
                                      ani3_animheader_s *animation, NUHGOBJROOTFN root_fn, NUVEC *root_translation,
                                      void *root_data);
 
-void NuMemAlloc(i32) {
-}
-
 void NuHGobjRead(variptr_u *, char *) {
 }
 
 static void NuHtmlFlush(i32) {
-}
-
-void NuHtmlTitle(char *) {
-}
-
-void NuMemDumpFn(i32) {
 }
 
 void NuDDSGetSize(char const *) {
@@ -68,9 +59,6 @@ void NuErrorPrint(char *message) {
 }
 
 void NuFntFindEnd(nutex_s *, i32 *, i32 *, i32, i32) {
-}
-
-void NuMemFlushFn() {
 }
 
 void NuBridgeAlloc() {
@@ -99,12 +87,6 @@ void NuQFntSetMtx2d(void *, numtx_s *) {
 }
 
 void NuWarningPrint(char *) {
-}
-
-void NuASin_Accurate(float) {
-}
-
-void NuBez3EvaluateX(nuvec4_s *, float) {
 }
 
 void NuDebugMsgPrint(char *message) {
@@ -144,9 +126,6 @@ void NuIOSDLLightmap(void *arg) {
 void NuLgtArcLaserEx(i32, nuvec_s *, nuvec_s *, nuvec_s *, float, float, float, float, i32, i32) {
 }
 
-void NuMemValidateFn() {
-}
-
 void NuVpSetDestRect(float, float, float, float) {
 }
 
@@ -156,13 +135,7 @@ void NuBrdigeDrawRope(numtl_s *, nuvec_s *, nuvec_s *, i32, i32 *, i32) {
 void NuDDSGetMipLevel(i32, i32, i32, NUTEXFORMAT, i32, bool, i32, i32, i32 &, i32 &, i32 &) {
 }
 
-void NuHtmlGraphArray(char **) {
-}
-
 void NuLgtSetArcMatEx(i32, numtl_s *, float, float, float, float) {
-}
-
-void NuMemGetExternal() {
 }
 
 extern "C" u8 CutSceneBoundingBoxTrackRoot;
@@ -378,17 +351,7 @@ void NuDisplayListCreate(nudisplayscene_s *raw_scene, variptr_u *buffer, variptr
 void NuFadeSetFxCodeMtls(nugeom_s *, unsigned char *) {
 }
 
-extern NUVEC *override_campos;
 
-void NuPortalSetOverride(NUVEC *position) {
-    override_campos = position;
-}
-
-void NuSpecialGetAnimPos(nuhspecial_s *) {
-}
-
-void NuSpecialReflection(i32) {
-}
 
 void NuDisplaySceneUnclip(nudisplayscene_s *) {
 }
@@ -439,9 +402,6 @@ void NuGCutSceneSysInitVfx(i32 (*)(char const *), i32 (*)(i32, VuMtx *), void (*
 // NuIOSDLGeom2DCallback is transcribed in android/nuiosdl_gl.cpp (original 0x29d1a0).
 
 void NuIOS_GetInAppProduct(i32, NuIOS_InAppProduct *) {
-}
-
-void NuMemBlkCheckFreeList(numemblk_s *) {
 }
 
 extern "C" i32 g_signedinUser;
@@ -639,11 +599,7 @@ void NuIOS_GetPurchaseResult() {
 void NuLightMotionBlurEffect(i32, float) {
 }
 
-extern i32 draw_portals;
 
-void NuPortalEnableDebugDraw(i32 enabled) {
-    draw_portals = enabled;
-}
 
 void NuTimeGetMicrosecondsPS(u32 *, u32 *) {
 }
@@ -776,7 +732,7 @@ void NuIOS_CopyBackbufferToTexture(nunativetex_s *texture, bool) {
 void NuIOS_IsProductPurchasedByNum(i32) {
 }
 
-static i32 g_vaoRecordCount asm("_ZL16g_vaoRecordCount");
+static i32 g_vaoRecordCount;
 
 void NuIOS_ResetVAODuplicateFinder() {
     g_vaoRecordCount = 0;
@@ -993,12 +949,6 @@ i32 NuLgtRand() {
     return NuLgtSeed;
 }
 
-void NuMemFree(void *) {
-}
-
-void NuStrCatC(char *, char) {
-}
-
 NuDynamicLight::RenderSet::RenderSet() {
 }
 
@@ -1027,14 +977,4 @@ void NuNetEmu::PackStats::Draw(float, float, float, float, NetSmallStats::eInfo)
 }
 
 static __used__ void NuErrorFunction(char *, ...) {
-}
-
-static __used__ void NuWarningFunction(char *, ...) {
-}
-
-static __used__ void NuDebugMsgFunction(char *, ...) {
-}
-
-static __used__ i32 NuDebugMsgFunctionTTY(i32, char *, ...) {
-    return 0;
 }

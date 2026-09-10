@@ -1,12 +1,16 @@
 #pragma once
 
-#include "decomp_assert.h"
+#include "decomp.h"
 #include "nu2api/nucore/common.h"
 #include "nu2api/numath/numtx.h"
 
 #define NURNDR_STREAM_MAX_BUFFERS 2
 
 typedef struct rndrstream_s RNDRSTREAM;
+
+extern i32 nurndr_nforced_mtls;
+extern struct numtl_s **nurndr_forced_mtl_table;
+extern struct numtl_s *nurndr_forced_mtl;
 
 typedef i32 NUCOLOUR32;
 
@@ -51,6 +55,9 @@ extern i32 g_backingHeight;
 #ifdef __cplusplus
 
 void NuRndrStreamInit(i32 stream_buffer_size, VARIPTR *buffer);
+// axes[0] is the center; axes[1..3] are the three shape basis vectors.
+void NuRndrCalcRandEllipsePos(struct nuvec4_s *position, NUMTX *matrix, NUVEC *axes);
+void NuRndrCalcRandCylinderPos(struct nuvec4_s *position, NUMTX *matrix, NUVEC *axes);
 
 extern "C" {
 #endif

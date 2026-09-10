@@ -21,6 +21,327 @@
 
 static const u32 iAISysPathColoursG[5] = {0xffff0000, 0xff00ff00, 0xff00ffff, 0xffff00ff, 0xffffff00};
 
+extern "C" f32 (*GetCharacterGoalSpeedFn)(APIOBJECT *);
+
+static __used__ i32 RowMoveWander(AIGROUP *group, AIROW *row, AIROW *previous, APIOBJECT *leader) {
+    AIPATHCNX *connection = row->path_info.connection;
+    if (connection == NULL)
+        return 0;
+    i32 node_index = connection->node_indices[row->path_info.direction == 0];
+    if (row->next_connection == NULL) {
+        if (previous != NULL) {
+            row->next_connection = previous->path_info.connection == connection ? previous->next_connection
+                                                                                : previous->path_info.connection;
+            if (row->next_connection == NULL)
+                return 0;
+        } else {
+            AIPATHNODE *node = &row->path_info.path->nodes[node_index];
+            i32 first = NuRandInt() % node->connection_count;
+            for (i32 i = 0; i < node->connection_count; ++i) {
+                row->next_connection = node->connections[(first + i) % node->connection_count];
+                AIPATHCNX *next = row->next_connection;
+                if (next != connection) {
+                    u8 route = leader->ai->field_0x138;
+                    if (route == 0xff || ((static_cast<u64>(next->route_mask) >> route) & 1) != 0 ||
+                        ((static_cast<u64>(node->route_boundary_mask) >> route) & 1) != 0) {
+                        i32 direction = node_index != next->node_indices[0];
+                        AIPATHNODE *other = &row->path_info.path->nodes[next->node_indices[direction ^ 1]];
+                        if (other->radius > group->radius && next->traversal_flags[direction] == 0)
+                            break;
+                    }
+                }
+                row->next_connection = NULL;
+            }
+            if (row->next_connection == NULL)
+                row->next_connection = connection;
+        }
+        AIPATHCNX *next = row->next_connection;
+        if (next->traversal_flags[node_index != next->node_indices[0]] == 0) {
+            i32 current_angle = connection->rotation;
+            if (row->path_info.direction != 0)
+                current_angle = NuAngAdd(0x8000, current_angle);
+            i32 next_angle;
+            if (connection->node_indices[row->path_info.direction == 0] == next->node_indices[0]) {
+                row->next_direction = 0;
+                next_angle = next->rotation;
+            } else {
+                row->next_direction = 1;
+                next_angle = NuAngAdd(0x8000, next->rotation);
+            }
+            row->is_clockwise = NuAngSub(next_angle, current_angle) < 0;
+        }
+    }
+    NUVEC offset = {row->is_clockwise ? -group->radius : group->radius, 0.0f, 0.0f};
+    NUVEC rotated, centre;
+    NuVecRotateY(&rotated, &offset, row->y_rot);
+    NuVecAdd(&centre, &rotated, &row->pos);
+    if (!row->is_turning) {
+        if (row->path_info.connection != row->next_connection) {
+            AIPATHNODE *nodes = row->path_info.path->nodes;
+            f32 distance = NuInfiniteLineToPointDistSqr(&nodes[row->next_connection->node_indices[0]].position,
+                                                       &nodes[row->next_connection->node_indices[1]].position, &centre);
+            if (group->radius * group->radius >= distance)
+                row->is_turning = 1;
+        } else {
+            AIPATHNODE *node = &row->path_info.path->nodes[
+                row->path_info.connection->node_indices[row->path_info.direction == 0]];
+            f32 distance = NuVecXZDistSqr(&row->pos, &node->position, &rotated);
+            if (node->radius_squared > distance) {
+                for (i32 i = 0; i < group->row_count; ++i) {
+                    group->rows[i].next_connection = NULL;
+                    group->rows[i].y_rot = NuAngAdd(group->rows[i].y_rot, 0x8000);
+                    group->rows[i].path_info.direction = group->rows[i].path_info.direction == 0;
+                }
+                group->leader = NULL;
+                group->is_reversed = !group->is_reversed;
+                if (group->is_reversed) {
+                    for (i32 i = group->member_count - 1; i != -1; --i) {
+                        APIOBJECT *object = group->members[i];
+                        if (object != NULL && (object->field_0x1f8 & 0x1001) == 0x1001 && object->field_0x287 == 0) {
+                            group->leader = object;
+                            break;
+                        }
+                    }
+                } else {
+                    for (i32 i = 0; i < group->member_count; ++i) {
+                        APIOBJECT *object = group->members[i];
+                        if (object->objptr != NULL && (object->field_0x1f8 & 0x1001) == 0x1001 && object->field_0x287 == 0) {
+                            group->leader = object;
+                            break;
+                        }
+                    }
+                }
+                return 1;
+            }
+        }
+    }
+    if (row->is_turning) {
+        i32 angle = row->next_connection->rotation;
+        if (row->next_direction != 0)
+            angle = NuAngAdd(angle, 0x8000);
+        i32 difference = NuAngSub(angle, row->y_rot);
+        i32 step = group->rotation_speed;
+        if (difference <= step) {
+            step = -step;
+            if (difference >= step) {
+                row->is_turning = 0;
+                row->path_info.connection = row->next_connection;
+                row->next_connection = NULL;
+                row->path_info.direction = row->next_direction;
+                step = difference;
+            }
+        }
+        row->y_rot = NuAngAdd(step, row->y_rot);
+        NuVecRotateY(&rotated, &offset, row->y_rot);
+        NuVecSub(&row->pos, &centre, &rotated);
+        return 0;
+    }
+    if (!group->is_row_turning) {
+        i32 angle = row->path_info.connection->rotation;
+        if (row->path_info.direction != 0)
+            angle = NuAngAdd(angle, 0x8000);
+        i32 difference = NuAngSub(angle, row->y_rot);
+        i32 step = group->rotation_speed;
+        if (difference <= step) {
+            step = -step;
+            if (difference >= step)
+                step = difference;
+        }
+        row->y_rot = NuAngAdd(step, row->y_rot);
+        rotated.x = rotated.y = rotated.z = 0.0f;
+        if (GetCharacterGoalSpeedFn != NULL)
+            rotated.z = GetCharacterGoalSpeedFn(leader);
+        NuVecRotateY(&rotated, &rotated, row->y_rot);
+        NuVecAdd(&row->pos, &row->pos, &rotated);
+        row->pos.y = leader->position.y;
+    }
+    return 0;
+}
+
+static __used__ i32 RowMoveTowards(AIGROUP *group, AIROW *row, AIROW *previous, APIOBJECT *leader) {
+    AIPATHCNX *connection = row->path_info.connection;
+    if (connection == NULL)
+        return 0;
+    i32 node_index = connection->node_indices[row->path_info.direction == 0];
+    i32 direction_node = node_index;
+    if (row->next_connection == NULL) {
+        if (previous != NULL) {
+            row->next_connection = previous->path_info.connection == connection ? previous->next_connection
+                                                                                : previous->path_info.connection;
+        } else if (group->leader != NULL) {
+            AIPATHINFO *destination = &group->leader->ai->script_process.path_info;
+            if (destination->path == row->path_info.path) {
+                i32 destination_node = destination->connection->node_indices[destination->dist > 0.5f];
+                direction_node = destination_node;
+                u8 connection_index = destination->path->route_matrix[node_index][destination_node];
+                if (connection_index != 0xff) {
+                    row->next_connection = destination->path->nodes[node_index].connections[connection_index];
+                    if (row->next_connection->traversal_flags[node_index != row->next_connection->node_indices[0]] != 0)
+                        row->next_connection = NULL;
+                }
+            }
+        }
+        AIPATHCNX *next = row->next_connection;
+        if (next != NULL && next->traversal_flags[direction_node != next->node_indices[0]] == 0) {
+            i32 current_angle = connection->rotation;
+            if (row->path_info.direction != 0)
+                current_angle = NuAngAdd(0x8000, current_angle);
+            i32 next_angle;
+            if (connection->node_indices[row->path_info.direction == 0] == next->node_indices[0]) {
+                row->next_direction = 0;
+                next_angle = next->rotation;
+            } else {
+                row->next_direction = 1;
+                next_angle = NuAngAdd(0x8000, next->rotation);
+            }
+            row->is_clockwise = NuAngSub(next_angle, current_angle) < 0;
+        }
+    }
+    if (row->next_connection == NULL) {
+        if (row->path_info.direction != 0) {
+            if (row->path_info.dist < 0.0f)
+                return 1;
+        } else if (row->path_info.dist > 1.0f) {
+            return 1;
+        }
+        NUVEC movement;
+        i32 angle = row->path_info.connection->rotation;
+        if (row->path_info.direction != 0)
+            angle = NuAngAdd(angle, 0x8000);
+        i32 difference = NuAngSub(angle, row->y_rot);
+        i32 step = group->rotation_speed;
+        if (difference <= step) {
+            step = -step;
+            if (difference >= step)
+                step = difference;
+        }
+        row->y_rot = NuAngAdd(step, row->y_rot);
+        movement.x = movement.y = movement.z = 0.0f;
+        if (GetCharacterGoalSpeedFn != NULL)
+            movement.z = GetCharacterGoalSpeedFn(leader);
+        NuVecRotateY(&movement, &movement, row->y_rot);
+        NuVecAdd(&row->pos, &row->pos, &movement);
+        row->pos.y = leader->position.y;
+        return 0;
+    }
+    NUVEC offset = {row->is_clockwise ? -group->radius : group->radius, 0.0f, 0.0f};
+    NUVEC rotated, centre;
+    NuVecRotateY(&rotated, &offset, row->y_rot);
+    NuVecAdd(&centre, &rotated, &row->pos);
+    if (!row->is_turning) {
+        if (row->path_info.connection != row->next_connection) {
+            AIPATHNODE *nodes = row->path_info.path->nodes;
+            f32 distance = NuInfiniteLineToPointDistSqr(&nodes[row->next_connection->node_indices[0]].position,
+                                                       &nodes[row->next_connection->node_indices[1]].position, &centre);
+            if (group->radius * group->radius >= distance)
+                row->is_turning = 1;
+        } else {
+            AIPATHNODE *node = &row->path_info.path->nodes[
+                row->path_info.connection->node_indices[row->path_info.direction == 0]];
+            f32 distance = NuVecXZDistSqr(&row->pos, &node->position, &rotated);
+            if (node->radius_squared > distance) {
+                for (i32 i = 0; i < group->row_count; ++i) {
+                    group->rows[i].next_connection = NULL;
+                    group->rows[i].y_rot = NuAngAdd(group->rows[i].y_rot, 0x8000);
+                    group->rows[i].path_info.direction = group->rows[i].path_info.direction == 0;
+                }
+                group->leader = NULL;
+                group->is_reversed = !group->is_reversed;
+                if (group->is_reversed) {
+                    for (i32 i = group->member_count - 1; i != -1; --i) {
+                        APIOBJECT *object = group->members[i];
+                        if (object != NULL && (object->field_0x1f8 & 0x1001) == 0x1001 && object->field_0x287 == 0) {
+                            group->leader = object;
+                            break;
+                        }
+                    }
+                } else {
+                    for (i32 i = 0; i < group->member_count; ++i) {
+                        APIOBJECT *object = group->members[i];
+                        if (object->objptr != NULL && (object->field_0x1f8 & 0x1001) == 0x1001 && object->field_0x287 == 0) {
+                            group->leader = object;
+                            break;
+                        }
+                    }
+                }
+                return 1;
+            }
+        }
+    }
+    if (row->is_turning) {
+        i32 angle = row->next_connection->rotation;
+        if (row->next_direction != 0)
+            angle = NuAngAdd(angle, 0x8000);
+        i32 difference = NuAngSub(angle, row->y_rot);
+        i32 step = group->rotation_speed;
+        if (difference <= step) {
+            step = -step;
+            if (difference >= step) {
+                row->is_turning = 0;
+                row->path_info.connection = row->next_connection;
+                row->next_connection = NULL;
+                row->path_info.direction = row->next_direction;
+                step = difference;
+            }
+        }
+        row->y_rot = NuAngAdd(step, row->y_rot);
+        NuVecRotateY(&rotated, &offset, row->y_rot);
+        NuVecSub(&row->pos, &centre, &rotated);
+        return 0;
+    }
+    if (!group->is_row_turning) {
+        i32 angle = row->path_info.connection->rotation;
+        if (row->path_info.direction != 0)
+            angle = NuAngAdd(angle, 0x8000);
+        i32 difference = NuAngSub(angle, row->y_rot);
+        i32 step = group->rotation_speed;
+        if (difference <= step) {
+            step = -step;
+            if (difference >= step)
+                step = difference;
+        }
+        row->y_rot = NuAngAdd(step, row->y_rot);
+        rotated.x = rotated.y = rotated.z = 0.0f;
+        if (GetCharacterGoalSpeedFn != NULL)
+            rotated.z = GetCharacterGoalSpeedFn(leader);
+        NuVecRotateY(&rotated, &rotated, row->y_rot);
+        NuVecAdd(&row->pos, &row->pos, &rotated);
+        row->pos.y = leader->position.y;
+    }
+    return 0;
+}
+
+static void FormationMove(AIGROUP *group, i32 (*move)(AIGROUP *, AIROW *, AIROW *, APIOBJECT *)) {
+    i32 turning = 0;
+    if (move != NULL && group->is_in_formation) {
+        AIROW *previous = NULL;
+        if (group->is_reversed) {
+            for (i32 i = group->row_count - 1; i != -1; --i) {
+                AIROW *row = &group->rows[i];
+                if (row->is_alive) {
+                    if (move(group, row, previous, group->leader) != 0)
+                        break;
+                    if (row->is_turning)
+                        turning = 1;
+                    previous = row;
+                }
+            }
+        } else {
+            for (i32 i = 0; i < group->row_count; ++i) {
+                AIROW *row = &group->rows[i];
+                if (row->is_alive) {
+                    if (move(group, row, previous, group->leader) != 0)
+                        break;
+                    if (row->is_turning)
+                        turning = 1;
+                    previous = row;
+                }
+            }
+        }
+    }
+    group->is_row_turning = turning;
+}
+
 static void AISysCheckAntinode_Rectangle(APIOBJECT *object, AIANTINODE *antinode, NUVEC *difference, f32 radius) {
     difference->x = object->ai->movement_position.x - antinode->position.x;
     if (difference->x > radius || difference->x < -radius) {
@@ -313,12 +634,12 @@ static void AISysLoadPathRoutes(AISYS *system, AIPATH *path) {
                 if (path->node_count != 0 && route->route_count != 0) {
                     route->node_routes = static_cast<u8 *>(AISysLoadAlloc(system, path->node_count));
                     EdFileRead(route->node_routes, path->node_count);
-                    route->node_directions = static_cast<u8 *>(AISysLoadAlloc(system, path->node_count));
-                    EdFileRead(route->node_directions, path->node_count);
+                    route->node_directions = static_cast<u8 *>(AISysLoadAlloc(system, route->route_count));
+                    EdFileRead(route->node_directions, route->route_count);
                     route->route_nodes = static_cast<u8 **>(AISysLoadAlloc(system, route->route_count * sizeof(u8 *)));
                     for (i32 route_index = 0; route_index < route->route_count; ++route_index) {
-                        route->route_nodes[route_index] = static_cast<u8 *>(AISysLoadAlloc(system, path->node_count));
-                        EdFileRead(route->route_nodes[route_index], path->node_count);
+                        route->route_nodes[route_index] = static_cast<u8 *>(AISysLoadAlloc(system, route->route_count));
+                        EdFileRead(route->route_nodes[route_index], route->route_count);
                     }
                     if (route->exit_node_count != 0) {
                         route->exit_nodes = static_cast<u8 *>(AISysLoadAlloc(system, route->exit_node_count));
@@ -329,18 +650,14 @@ static void AISysLoadPathRoutes(AISYS *system, AIPATH *path) {
 
             i32 character_count = EdFileReadChar();
             for (i32 character_index = 0; character_index < character_count; ++character_index) {
-                char character_name[256] = {};
+                char character_name[256];
                 i32 character_name_length = EdFileReadChar();
                 EdFileRead(character_name, character_name_length);
                 if (SpecialRouteCharacterTypeIDFn != NULL) {
                     u8 type = SpecialRouteCharacterTypeIDFn(character_name);
-                    if (type < 32) {
-                        route->character_mask[0] |= 1u << type;
-                    } else if (type < 64) {
-                        u32 bit = 1u << (type & 31);
-                        route->character_mask[1] |= bit;
-                        route->character_mask[2] |= bit;
-                        route->character_mask[3] |= bit;
+                    if (type < 64) {
+                        route->character_masks[0] |= static_cast<u64>(1) << type;
+                        route->character_masks[1] |= static_cast<u64>(1) << type;
                     } else {
                         route->character_mask[0] = 0xffffffff;
                         route->character_mask[1] = 0xffffffff;
@@ -369,6 +686,9 @@ static AIPATHSYS *AISysLoadPaths(AISYS *system, i32 version, NUGSCN *scene) {
     }
 
     AIPATHSYS *path_system = static_cast<AIPATHSYS *>(AISysLoadAlloc(system, sizeof(AIPATHSYS)));
+    if (path_system == NULL) {
+        return NULL;
+    }
     path_system->path_count = static_cast<u8>(path_count);
     path_system->paths = static_cast<AIPATH **>(AISysLoadAlloc(system, path_system->path_count * sizeof(AIPATH *)));
 
@@ -396,6 +716,8 @@ static AIPATHSYS *AISysLoadPaths(AISYS *system, i32 version, NUGSCN *scene) {
                 connection->game_flags = EdFileReadShort();
                 connection->width = EdFileReadFloat();
                 connection->cost = EdFileReadFloat();
+                if (connection->cost == 0.0f)
+                    connection->cost = 0.00001f;
             }
         }
 
@@ -420,7 +742,7 @@ static AIPATHSYS *AISysLoadPaths(AISYS *system, i32 version, NUGSCN *scene) {
                 node->distance_cache_nodes[1] = 0xff;
                 node->special_route_index = static_cast<u8>(EdFileReadChar());
 
-                char special_name[256] = {};
+                char special_name[256];
                 i32 special_name_length = EdFileReadChar();
                 if (special_name_length != 0) {
                     EdFileRead(special_name, special_name_length);
@@ -433,7 +755,7 @@ static AIPATHSYS *AISysLoadPaths(AISYS *system, i32 version, NUGSCN *scene) {
                     node->connections =
                         static_cast<AIPATHCNX **>(AISysLoadAlloc(system, node->connection_count * sizeof(AIPATHCNX *)));
                     for (i32 i = 0; i < node->connection_count; ++i) {
-                        u16 connection_index = EdFileReadShort();
+                        i16 connection_index = EdFileReadShort();
                         node->connections[i] = &path->connections[connection_index];
                     }
                     if ((node->connection_count & 1) != 0) {
@@ -492,6 +814,120 @@ static i16 AISysPathIntersectionAngle(f32 value) {
     return static_cast<i16>(static_cast<i32>(((sign + product) * 0.785398f - x + (x * -0.166667f) * x2 +
                                               (-0.075f * x2) * x3 + (-0.0446429f * x3) * x4 + (x4 * -0.0303819f) * x5) *
                                              10430.4f));
+}
+
+extern "C" i32 WithinConnection(AISYS *system, NUVEC *position, AIPATH *path, AIPATHCNX *connection, i32 checks,
+                                 AIPATHCNX *previous_connection, i32 route, i32 ground, AIPATHINFO *path_info,
+                                 f32 radius, i32 update_once) {
+    (void)checks;
+    (void)ground;
+    if (update_once != 0) {
+        if (connection->last_search_checksum == path->search_checksum)
+            return 0;
+        connection->last_search_checksum = path->search_checksum;
+    }
+    if (route != 0xff && previous_connection != NULL &&
+        ((static_cast<u64>(connection->route_mask) >> route) & 1) == 0) {
+        AIPATHNODE *shared;
+        if (previous_connection->node_indices[0] == connection->node_indices[0])
+            shared = &path->nodes[connection->node_indices[0]];
+        else if (previous_connection->node_indices[0] == connection->node_indices[1])
+            shared = &path->nodes[connection->node_indices[1]];
+        else if (previous_connection->node_indices[1] == connection->node_indices[0])
+            shared = &path->nodes[connection->node_indices[0]];
+        else if (previous_connection->node_indices[1] == connection->node_indices[1])
+            shared = &path->nodes[connection->node_indices[1]];
+        else
+            return 0;
+        if (shared == NULL || ((static_cast<u64>(shared->route_boundary_mask) >> route) & 1) == 0)
+            return 0;
+    }
+
+    AIPATHNODE *first = &path->nodes[connection->node_indices[0]];
+    AIPATHNODE *second = &path->nodes[connection->node_indices[1]];
+    f32 first_radius = first->radius;
+    f32 second_radius = second->radius;
+    u8 narrow = 0;
+    if (first_radius > radius + 0.05f)
+        first_radius -= radius;
+    else
+        narrow = 1;
+    if (second_radius > radius + 0.05f)
+        second_radius -= radius;
+    else
+        narrow = 1;
+
+    if (first->has_special != 0 &&
+        (path->updated_node_bits[connection->node_indices[0] >> 3] & (1 << (connection->node_indices[0] & 7))) == 0)
+        AIPathNodeUpdatePos(system, path, first);
+    if (second->has_special != 0 &&
+        (path->updated_node_bits[connection->node_indices[1] >> 3] & (1 << (connection->node_indices[1] & 7))) == 0)
+        AIPathNodeUpdatePos(system, path, second);
+
+    NUVEC delta;
+    delta.x = position->x - first->position.x;
+    delta.z = position->z - first->position.z;
+    NUVEC local;
+    NuVecRotateY(&local, &delta, -connection->rotation);
+    if (NuFabs(second_radius - first_radius) > connection->horizontal_distance) {
+        if (second_radius > first_radius) {
+            first = second;
+            first_radius = second_radius;
+        }
+        if (first->min_height > position->y || position->y > first->max_height)
+            return 0;
+        const f32 dx = position->x - first->position.x;
+        const f32 dz = position->z - first->position.z;
+        if (!(first_radius * first_radius >= dx * dx + dz * dz))
+            return 0;
+    } else {
+        if (NuFabs(local.x) > first_radius && NuFabs(local.x) > second_radius)
+            return 0;
+        if (local.z < -first_radius || local.z > connection->horizontal_distance + second_radius)
+            return 0;
+        const i32 angle = AISysPathIntersectionAngle((second_radius - first_radius) / connection->horizontal_distance);
+        NUVEC wall = local;
+        if (wall.x < 0.0f)
+            wall.x = -wall.x;
+        NuVecRotateY(&wall, &wall, -angle);
+        NUVEC radial;
+        if (wall.z < 0.0f) {
+            if (first->min_height > position->y || position->y > first->max_height)
+                return 0;
+            if (!(first_radius * first_radius >= NuVecXZDistSqr(position, &first->position, &radial)))
+                return 0;
+        } else if (wall.z > NU_COS_LUT(angle) * connection->horizontal_distance) {
+            if (second->min_height > position->y || position->y > second->max_height)
+                return 0;
+            if (!(second_radius * second_radius >= NuVecXZDistSqr(position, &second->position, &radial)))
+                return 0;
+        } else {
+            f32 minimum, maximum;
+            if (first_radius > local.z) {
+                minimum = first->min_height;
+                maximum = first->max_height;
+            } else if (local.z > connection->horizontal_distance - second_radius) {
+                minimum = second->min_height;
+                maximum = second->max_height;
+            } else {
+                const f32 fraction = (local.z - first_radius) /
+                                     (connection->horizontal_distance - (first_radius + second_radius));
+                const f32 inverse = 1.0f - fraction;
+                minimum = second->min_height * fraction + first->min_height * inverse;
+                maximum = second->max_height * fraction + first->max_height * inverse;
+            }
+            if (minimum > position->y || position->y > maximum || !(first_radius > wall.x))
+                return 0;
+        }
+    }
+    if (path_info != NULL) {
+        path_info->direction = 0;
+        path_info->flags = ((path_info->flags | 1) & ~8) | (narrow << 3);
+        path_info->connection = connection;
+        path_info->dist = local.z / connection->horizontal_distance;
+        path_info->width = local.x;
+    }
+    return 1;
 }
 
 static u32 AISysCharacterTestPathCnx(AISYS *system, APIOBJECT *object, AIPACKET *packet, AIPATHCNX *connection,
@@ -882,12 +1318,13 @@ static void AISysLoadLocatorSets(AISYS *system, i32 version) {
         AILOCATORSET *locator_set = &system->locator_sets[index];
         EdFileRead(locator_set->name, sizeof(locator_set->name));
         locator_set->locator_count = static_cast<i8>(EdFileReadInt());
-        locator_set->locator_entries = static_cast<u8 *>(AISysLoadAlloc(system, locator_set->locator_count));
+        locator_set->locator_entries =
+            static_cast<u8 *>(AISysLoadAlloc(system, locator_set->locator_count * sizeof(AILOCATORSET)));
         for (i32 locator_index = 0; locator_index < locator_set->locator_count; ++locator_index) {
             locator_set->locator_entries[locator_index] = static_cast<u8>(EdFileReadChar());
         }
         locator_set->assigned = static_cast<u8 *>(AISysLoadAlloc(system, locator_set->locator_count));
-        memset(locator_set->assigned, 0xff, locator_set->locator_count);
+        memset(locator_set->assigned, 0, locator_set->locator_count);
     }
 }
 
@@ -1045,13 +1482,20 @@ extern "C" {
                            f32 movement_parameter) {
         AIGROUP *group = packet->group;
         if (group != NULL && group->is_in_formation) {
-            // FormationMove's leader-row update remains to be recovered.
-            if (mode == 4 || mode == AIPACKET_MOVEMENT_TO_DESTINATION) {
+            switch (mode) {
+            case AIPACKET_MOVEMENT_WANDER:
+                if (group->leader == reinterpret_cast<APIOBJECT *>(packet->owner))
+                    FormationMove(group, RowMoveWander);
                 AIFormationFollow(packet);
                 return;
-            }
-            if (mode == 5) {
+            case AIPACKET_MOVEMENT_FORMATION:
                 mode = AIPACKET_MOVEMENT_TO_DESTINATION;
+                break;
+            case AIPACKET_MOVEMENT_TO_DESTINATION:
+                if (group->leader == reinterpret_cast<APIOBJECT *>(packet->owner))
+                    FormationMove(group, RowMoveTowards);
+                AIFormationFollow(packet);
+                return;
             }
         }
 
@@ -1080,11 +1524,11 @@ extern "C" {
 
         AIPATHNODE *from = AIPathFindNode(system, path, from_name);
         AIPATHNODE *to = AIPathFindNode(system, path, to_name);
-        if (from == NULL || to == NULL || from == to || from->connections == NULL) {
+        if (to == NULL || from == NULL || from == to) {
             return NULL;
         }
 
-        const u8 to_index = static_cast<u8>(to - path->nodes);
+        const i32 to_index = to - path->nodes;
         for (i32 index = 0; index < from->connection_count; ++index) {
             AIPATHCNX *connection = from->connections[index];
             if (connection->node_indices[0] == to_index) {
@@ -1146,26 +1590,15 @@ extern "C" {
         }
 
         const i32 node_index = static_cast<i32>(node - path->nodes);
-        const u8 node_bit = static_cast<u8>(1u << (node_index & 7));
-        u8 &updated_nodes = path->updated_node_bits[node_index >> 3];
+        const u8 node_bit = static_cast<u8>(1u << (node_index % 8));
+        u8 &updated_nodes = path->updated_node_bits[node_index / 8];
         if ((updated_nodes & node_bit) != 0) {
             return;
         }
         updated_nodes |= node_bit;
 
         nuhspecial_s *special = &node->special_handle;
-        if ((node->runtime_flags & AIPATHNODE_RUNTIME_SPECIAL_UNAVAILABLE) == 0) {
-            if (NuSpecialGetVisibilityFn(special) == 0 &&
-                (FindAlternativeSpecialObjectFn == NULL || FindAlternativeSpecialObjectFn(system, special) == 0)) {
-                node->runtime_flags |= AIPATHNODE_RUNTIME_SPECIAL_UNAVAILABLE;
-                for (i32 index = 0; index < node->connection_count; ++index) {
-                    AIPATHCNX *connection = node->connections[index];
-                    connection->traversal_flags[0] |= AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
-                    connection->traversal_flags[1] |= AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
-                }
-                return;
-            }
-        } else {
+        if ((node->runtime_flags & AIPATHNODE_RUNTIME_SPECIAL_UNAVAILABLE) != 0) {
             if (NuSpecialGetVisibilityFn(special) == 0) {
                 return;
             }
@@ -1179,6 +1612,17 @@ extern "C" {
                     connection->traversal_flags[0] &= ~AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
                     connection->traversal_flags[1] &= ~AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
                 }
+            }
+        } else {
+            if (NuSpecialGetVisibilityFn(special) == 0 &&
+                (FindAlternativeSpecialObjectFn == NULL || FindAlternativeSpecialObjectFn(system, special) == 0)) {
+                node->runtime_flags |= AIPATHNODE_RUNTIME_SPECIAL_UNAVAILABLE;
+                for (i32 index = 0; index < node->connection_count; ++index) {
+                    AIPATHCNX *connection = node->connections[index];
+                    connection->traversal_flags[0] |= AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
+                    connection->traversal_flags[1] |= AIPATH_CONNECTION_FLAG_SPECIAL_UNAVAILABLE;
+                }
+                return;
             }
         }
 
@@ -1218,10 +1662,11 @@ extern "C" {
             }
         }
 
-        nuinstanim_s *animation = NuSpecialGetInstAnim(special);
+        nuinstanim_s *animation;
         if (previous_position.x != node->position.x || previous_position.y != node->position.y ||
             previous_position.z != node->position.z ||
-            (animation != NULL && (animation->flags & NUINSTANIM_FLAG_PLAYING) != 0 && animation->tfactor != 0.0f)) {
+            ((animation = NuSpecialGetInstAnim(special)) != NULL &&
+             (animation->flags & NUINSTANIM_FLAG_PLAYING) != 0 && animation->tfactor != 0.0f)) {
             node->runtime_flags |= AIPATHNODE_RUNTIME_POSITION_CHANGED;
         } else {
             node->runtime_flags &= static_cast<u8>(~AIPATHNODE_RUNTIME_POSITION_CHANGED);
@@ -1477,8 +1922,19 @@ extern "C" {
                         first_time = 1;
                     }
 
+                    LOG_INFO_IF(
+                        packet == NULL && first_time,
+                        "level-script action processor=%p script=%s state=%s action=%s params=%d [%s, %s, %s, %s]",
+                        (void *)processor, processor->script->name, processor->state->name, action->def->name,
+                        action->param_count, action->param_count > 0 ? action->params[0] : "",
+                        action->param_count > 1 ? action->params[1] : "",
+                        action->param_count > 2 ? action->params[2] : "",
+                        action->param_count > 3 ? action->params[3] : "");
                     action_completed = action->def->eval_fn(system, processor, packet, action->params,
                                                             action->param_count, first_time, elapsed) != 0;
+                    LOG_INFO_IF(packet == NULL && action_completed,
+                                "level-script action complete processor=%p action=%s", (void *)processor,
+                                action->def->name);
                     if (!action_completed) {
                         break;
                     }
@@ -1608,46 +2064,46 @@ extern "C" {
 
     void AISysCharacterMovement(AISYS *system, AIPACKET *packet, APIOBJECT *object, i32 checks) {
         packet->movement_event_flags &= static_cast<u8>(~AIPACKET_PATH_CONNECTION_CHANGED);
-        if (MidSpecialMoveFn != NULL && MidSpecialMoveFn(system, packet, object) != 0) {
+        if (MidSpecialMoveFn == NULL || MidSpecialMoveFn(system, packet, object) == 0) {
+            if (packet->path_info.path != NULL && packet->path_info.connection != NULL) {
+                packet->movement_destination = object->position;
+                packet->movement_stopping_distance = 0.0f;
+                switch (packet->movement_flags & AIPACKET_MOVEMENT_MODE_MASK) {
+                    case AIPACKET_MOVEMENT_TO_DESTINATION:
+                        AIMoveToDestination(system, packet, object, checks);
+                        break;
+                    case AIPACKET_MOVEMENT_RETREAT:
+                        AIRetreatFromDestination(system, packet, object, checks);
+                        break;
+                    case AIPACKET_MOVEMENT_CIRCLE:
+                        AICircle(system, packet, object, checks);
+                        break;
+                    case AIPACKET_MOVEMENT_WANDER:
+                        AIWander(system, packet, object, checks);
+                        break;
+                    case AIPACKET_MOVEMENT_AVOIDING_CAMERA:
+                        AIMoveToDestinationAvoidingCamera(system, packet, object, checks);
+                        break;
+                    case AIPACKET_MOVEMENT_DIRECT:
+                        AIMoveDirectlyToDestination(system, packet, object, checks);
+                        break;
+                }
+            } else {
+                packet->movement_destination = object->position;
+                packet->movement_stopping_distance = 0.0f;
+                const u8 mode = packet->movement_flags & AIPACKET_MOVEMENT_MODE_MASK;
+                if (mode == AIPACKET_MOVEMENT_DIRECT || mode == AIPACKET_MOVEMENT_TO_DESTINATION ||
+                    mode == AIPACKET_MOVEMENT_AVOIDING_CAMERA) {
+                    packet->movement_stopping_distance = packet->fallback_stopping_distance;
+                    packet->movement_destination = packet->fallback_destination;
+                }
+            }
+
+            packet->movement_flags &= static_cast<u8>(~AIPACKET_MOVEMENT_MODE_MASK);
+        } else {
             packet->field_0x1e6 |= AIPACKET_RUNTIME_SPECIAL_MOVE;
             packet->field_0x1e7 |= AIPACKET_MOVEMENT_SPECIAL_HANDLED;
-            return;
         }
-
-        packet->movement_destination = object->position;
-        packet->movement_stopping_distance = 0.0f;
-        u8 movement_flags = packet->movement_flags;
-        const u8 mode = movement_flags & AIPACKET_MOVEMENT_MODE_MASK;
-
-        if (packet->path_info.path != NULL && packet->path_info.connection != NULL) {
-            switch (mode) {
-                case AIPACKET_MOVEMENT_TO_DESTINATION:
-                    AIMoveToDestination(system, packet, object, checks);
-                    break;
-                case AIPACKET_MOVEMENT_RETREAT:
-                    AIRetreatFromDestination(system, packet, object, checks);
-                    break;
-                case AIPACKET_MOVEMENT_CIRCLE:
-                    AICircle(system, packet, object, checks);
-                    break;
-                case AIPACKET_MOVEMENT_WANDER:
-                    AIWander(system, packet, object, checks);
-                    break;
-                case AIPACKET_MOVEMENT_AVOIDING_CAMERA:
-                    AIMoveToDestinationAvoidingCamera(system, packet, object, checks);
-                    break;
-                case AIPACKET_MOVEMENT_DIRECT:
-                    AIMoveDirectlyToDestination(system, packet, object, checks);
-                    break;
-            }
-            movement_flags = packet->movement_flags;
-        } else if (mode == AIPACKET_MOVEMENT_TO_DESTINATION || mode == AIPACKET_MOVEMENT_AVOIDING_CAMERA ||
-                   mode == AIPACKET_MOVEMENT_DIRECT) {
-            packet->movement_destination = packet->fallback_destination;
-            packet->movement_stopping_distance = packet->fallback_stopping_distance;
-        }
-
-        packet->movement_flags = movement_flags & static_cast<u8>(~AIPACKET_MOVEMENT_MODE_MASK);
     }
 
     void AISysCreatureAntinodeInteraction(AISYS *system, i32 object_count, APIOBJECT **objects, i32 *) {
@@ -1901,10 +2357,7 @@ extern "C" {
             packet->path_info.next_check = 0;
             packet->path_info.path_index = 0;
         }
-        if (path == NULL) {
-            return;
-        }
-
+        path = packet->path_info.path;
         AISysResetPathSearchConnectionChecks(path);
 
         AIPATHCNX *current_connection = packet->path_info.connection;
@@ -1917,37 +2370,32 @@ extern "C" {
 
             const bool check_adjacent_connections =
                 (object->flags_low & APIOBJECT_FLAG_PLAYER_ACTIVE) != 0 ||
-                (packet->movement_target == NULL && packet->path_connection_state == 0 && ground != 0);
+                (packet->field_0x180 == NULL && packet->path_connection_state == 0 && ground != 0);
             if (!check_adjacent_connections) {
                 return;
             }
 
-            const u8 first_node_index = current_connection->node_indices[current_direction];
-            if (first_node_index < path->node_count) {
-                AIPATHNODE &first_node = path->nodes[first_node_index];
-                for (i32 connection_index = 0; connection_index < first_node.connection_count; ++connection_index) {
-                    AIPATHCNX *candidate = first_node.connections[connection_index];
-                    if (candidate != current_connection &&
-                        AISysCharacterTestPathCnx(system, object, packet, candidate, 0, &nearest_distance_squared) !=
-                            0) {
-                        return;
-                    }
-                }
+            path = packet->path_info.path;
+            AIPATHNODE &first_node = path->nodes[current_connection->node_indices[current_direction]];
+            for (i32 connection_index = 0; connection_index < first_node.connection_count; ++connection_index) {
+                AIPATHCNX *candidate = first_node.connections[connection_index];
+                if (candidate != current_connection &&
+                    AISysCharacterTestPathCnx(system, object, packet, candidate,
+                                              candidate->node_indices[0] != current_connection->node_indices[current_direction],
+                                              &nearest_distance_squared) != 0)
+                    return;
             }
 
             path = packet->path_info.path;
-            const u8 second_node_index = current_connection->node_indices[current_direction == 0];
-            if (second_node_index < path->node_count) {
-                AIPATHNODE &second_node = path->nodes[second_node_index];
-                for (i32 connection_index = 0; connection_index < second_node.connection_count; ++connection_index) {
-                    AIPATHCNX *candidate = second_node.connections[connection_index];
-                    const i32 direction = candidate->node_indices[0] != second_node_index;
-                    if (candidate != current_connection &&
-                        AISysCharacterTestPathCnx(system, object, packet, candidate, direction,
-                                                  &nearest_distance_squared) != 0) {
-                        return;
-                    }
-                }
+            const i32 other_direction = current_direction == 0;
+            AIPATHNODE &second_node = path->nodes[current_connection->node_indices[other_direction]];
+            for (i32 connection_index = 0; connection_index < second_node.connection_count; ++connection_index) {
+                AIPATHCNX *candidate = second_node.connections[connection_index];
+                if (candidate != current_connection &&
+                    AISysCharacterTestPathCnx(system, object, packet, candidate,
+                                              candidate->node_indices[0] != current_connection->node_indices[other_direction],
+                                              &nearest_distance_squared) != 0)
+                    return;
             }
         }
 
@@ -1955,9 +2403,6 @@ extern "C" {
         if ((packet->navigation_flags & AIPACKET_NAVIGATION_FLAG_SEARCH_ALL_PATHS) == 0) {
             i32 remaining_checks = path->node_count < checks ? path->node_count : checks;
             while (remaining_checks-- > 0) {
-                if (packet->path_info.next_check >= path->node_count) {
-                    packet->path_info.next_check = 0;
-                }
                 AIPATHNODE &node = path->nodes[packet->path_info.next_check];
                 for (i32 connection_index = 0; connection_index < node.connection_count; ++connection_index) {
                     if (AISysCharacterTestPathCnx(system, object, packet, node.connections[connection_index], -1,
@@ -1965,6 +2410,7 @@ extern "C" {
                         return;
                     }
                 }
+                path = packet->path_info.path;
                 packet->path_info.next_check = (packet->path_info.next_check + 1) % path->node_count;
             }
             return;
@@ -1990,13 +2436,14 @@ extern "C" {
         }
         AISysResetPathSearchConnectionChecks(path);
 
-        bool position_inside_path_bounds = false;
+        i32 position_inside_path_bounds = 0;
         for (i32 remaining_checks = checks; remaining_checks > 0; --remaining_checks) {
             if (!position_inside_path_bounds) {
-                position_inside_path_bounds = AIPathCheckExtents(path, &packet->owner->apiobj.position) != 0;
+                position_inside_path_bounds = AIPathCheckExtents(packet->path_info.path, &packet->owner->apiobj.position);
             }
 
             if (position_inside_path_bounds) {
+                path = packet->path_info.path;
                 AIPATHNODE &node = path->nodes[packet->path_info.next_check];
                 for (i32 connection_index = 0; connection_index < node.connection_count; ++connection_index) {
                     if (AISysCharacterTestPathCnx(system, object, packet, node.connections[connection_index], -1,
@@ -2006,6 +2453,7 @@ extern "C" {
                 }
 
                 ++packet->path_info.next_check;
+                path = packet->path_info.path;
                 if (packet->path_info.next_check < path->node_count) {
                     continue;
                 }
@@ -2020,8 +2468,8 @@ extern "C" {
             path = system->path_sys->paths[packet->path_info.path_index];
             packet->path_info.path = path;
             AISysCharacterSetPathCnx(packet, &object->position, NULL, 0);
-            AISysResetPathSearchConnectionChecks(path);
-            position_inside_path_bounds = false;
+            AISysResetPathSearchConnectionChecks(packet->path_info.path);
+            position_inside_path_bounds = 0;
         }
 
         packet->path_info.path = original_path;
@@ -2252,8 +2700,8 @@ extern "C" {
         system->player_2 = player_2;
 
         AIANTINODE *dynamic = dynamic_antinodes;
-        const i32 antinode_count = system->antinode_count;
-        for (i32 index = 0; index < antinode_count + 64; ++index) {
+        for (i32 index = 0; index < system->antinode_count + 64; ++index) {
+            const i32 antinode_count = system->antinode_count;
             AIANTINODE *antinode =
                 index < antinode_count ? &system->antinodes[index] : &dynamic[index - antinode_count];
             if (antinode->has_special == 0) {
@@ -2308,21 +2756,23 @@ extern "C" {
 
             const f32 position_on_connection = locator->path_info.dist;
             f32 radius;
-            if (position_on_connection < 0.0f) {
-                radius = start->radius;
-            } else if (position_on_connection <= 1.0f) {
-                radius = end->radius * position_on_connection + (1.0f - position_on_connection) * start->radius;
-            } else {
+            if (position_on_connection > 1.0f) {
                 radius = end->radius;
+            } else if (position_on_connection < 0.0f) {
+                radius = start->radius;
+            } else {
+                radius = end->radius * position_on_connection + (1.0f - position_on_connection) * start->radius;
             }
 
-            NUVEC perpendicular = {direction.z * radius, 0.0f, -direction.x * radius};
+            const f32 direction_x = direction.x;
+            direction.x = direction.z * radius;
+            direction.z = -direction_x * radius;
             locator->position = start->position;
 
             NUVEC offset;
             NuVecScale(&offset, &delta, position_on_connection);
             NuVecAdd(&locator->position, &locator->position, &offset);
-            NuVecScale(&offset, &perpendicular, locator->path_info.width);
+            NuVecScale(&offset, &direction, locator->path_info.width);
             NuVecAdd(&locator->position, &locator->position, &offset);
 
             const i32 path_angle = static_cast<i32>(NuAtan2(delta.x, delta.z) * 10430.378f);
@@ -2382,14 +2832,18 @@ extern "C" {
                 packet->field_0x1e7 = source_flags & 0x3f;
                 if ((source_flags & AIPACKET_MOVEMENT_SOURCE_ACTIVE) != 0) {
                     const u8 source = (source_flags & AIPACKET_MOVEMENT_SOURCE_MASK) >> 2;
-                    if (source == 1 && packet->field_0x134 != 0xff) {
-                        AICREATURE *creature = &system->creatures[packet->field_0x134];
-                        AIMoveInstruction(packet, &creature->pos, 0.0f, &creature->path_info,
-                                          AIPACKET_MOVEMENT_TO_DESTINATION, 0.0f);
-                    } else if (source == 2 && packet->locator != NULL) {
-                        AIPATHINFO *locator_path = &packet->locator->path_info;
-                        AIMoveInstruction(packet, &packet->locator->position, 0.0f, locator_path,
-                                          AIPACKET_MOVEMENT_TO_DESTINATION, 0.0f);
+                    if (source == 1) {
+                        if (packet->field_0x134 != 0xff) {
+                            AICREATURE *creature = &system->creatures[packet->field_0x134];
+                            AIMoveInstruction(packet, &creature->pos, 0.0f, &creature->path_info,
+                                              AIPACKET_MOVEMENT_TO_DESTINATION, 0.0f);
+                        }
+                    } else if (source == 2) {
+                        if (packet->locator != NULL) {
+                            AIPATHINFO *locator_path = &packet->locator->path_info;
+                            AIMoveInstruction(packet, &packet->locator->position, 0.0f, locator_path,
+                                              AIPACKET_MOVEMENT_TO_DESTINATION, 0.0f);
+                        }
                     } else {
                         packet->field_0x1e7 = source_flags & 0x2f;
                     }
@@ -2445,22 +2899,30 @@ extern "C" {
         }
 
         NUVEC delta;
-        f32 distance;
         if (use_three_dimensions == 0) {
-            distance = NuVecXZDist(&packet->movement_destination, &object->position, &delta);
+            const f32 distance = NuVecXZDist(&packet->movement_destination, &object->position, &delta);
+            const f32 stopping_clearance = clearance + packet->movement_stopping_distance;
+            if (distance > packet->mover_height + clearance + packet->movement_stopping_distance) {
+                const f32 scale = distance != 0.0f && packet->mover_height != 0.0f ? packet->mover_height / distance : 0.0f;
+                NuVecScale(&delta, &delta, scale);
+                NuVecAdd(&packet->movement_position, &object->position, &delta);
+            } else {
+                const f32 scale = distance != 0.0f && stopping_clearance != 0.0f ? stopping_clearance / distance : 0.0f;
+                NuVecScale(&delta, &delta, scale);
+                NuVecSub(&packet->movement_position, &packet->movement_destination, &delta);
+            }
         } else {
-            distance = NuVecDist(&packet->movement_destination, &object->position, &delta);
-        }
-
-        const f32 stopping_clearance = clearance + packet->movement_stopping_distance;
-        if (distance <= packet->mover_height + clearance + packet->movement_stopping_distance) {
-            const f32 scale = distance != 0.0f && stopping_clearance != 0.0f ? stopping_clearance / distance : 0.0f;
-            NuVecScale(&delta, &delta, scale);
-            NuVecSub(&packet->movement_position, &packet->movement_destination, &delta);
-        } else {
-            const f32 scale = distance != 0.0f && packet->mover_height != 0.0f ? packet->mover_height / distance : 0.0f;
-            NuVecScale(&delta, &delta, scale);
-            NuVecAdd(&packet->movement_position, &object->position, &delta);
+            const f32 distance = NuVecDist(&packet->movement_destination, &object->position, &delta);
+            const f32 stopping_clearance = clearance + packet->movement_stopping_distance;
+            if (distance > packet->mover_height + clearance + packet->movement_stopping_distance) {
+                const f32 scale = distance != 0.0f && packet->mover_height != 0.0f ? packet->mover_height / distance : 0.0f;
+                NuVecScale(&delta, &delta, scale);
+                NuVecAdd(&packet->movement_position, &object->position, &delta);
+            } else {
+                const f32 scale = distance != 0.0f && stopping_clearance != 0.0f ? stopping_clearance / distance : 0.0f;
+                NuVecScale(&delta, &delta, scale);
+                NuVecSub(&packet->movement_position, &packet->movement_destination, &delta);
+            }
         }
     }
 
@@ -2499,7 +2961,11 @@ extern "C" {
             if (packet->path_info.path == NULL) {
                 packet->last_path_position = object->position;
             } else {
-                AISysGetCharacterPathPos(system, object, packet, (object->field_0x1fa & 8) == 0, checks);
+                if ((object->field_0x1fa & 8) == 0) {
+                    AISysGetCharacterPathPos(system, object, packet, 1, checks);
+                } else {
+                    AISysGetCharacterPathPos(system, object, packet, 0, checks);
+                }
                 movement_source_flags = packet->field_0x1e7;
             }
 
@@ -2510,21 +2976,27 @@ extern "C" {
             }
         } else {
             AIPATH *path = packet->path_info.path;
-            AIPATHCNX *connection = packet->path_info.connection;
-            if (path != NULL && connection != NULL) {
-                for (i32 endpoint = 0; endpoint < 2; ++endpoint) {
-                    const u8 node_index = connection->node_indices[endpoint];
-                    AIPATHNODE *node = &path->nodes[node_index];
-                    if (node->has_special != 0 &&
-                        (path->updated_node_bits[node_index >> 3] & (1u << (node_index & 7))) == 0) {
-                        AIPathNodeUpdatePos(system, path, node);
+            if (path != NULL && packet->path_info.connection != NULL) {
+                u8 node_index = packet->path_info.connection->node_indices[0];
+                AIPATHNODE *first = &path->nodes[node_index];
+                AIPATHNODE *second = &path->nodes[packet->path_info.connection->node_indices[1]];
+                if (first->has_special != 0 &&
+                    (path->updated_node_bits[node_index / 8] & (1u << (node_index % 8))) == 0) {
+                    AIPathNodeUpdatePos(system, path, first);
+                }
+                if (second->has_special != 0) {
+                    node_index = packet->path_info.connection->node_indices[1];
+                    path = packet->path_info.path;
+                    if ((path->updated_node_bits[node_index / 8] & (1u << (node_index % 8))) == 0) {
+                        AIPathNodeUpdatePos(system, path, second);
                     }
                 }
             }
 
+            path = packet->path_info.path;
             if (packet->inside_path_node != -1 && path != NULL) {
-                const i32 node_index = packet->inside_path_node;
-                path->inside_node_bits[node_index >> 3] |= static_cast<u8>(1u << (node_index & 7));
+                const i16 node_index = packet->inside_path_node;
+                path->inside_node_bits[node_index / 8] |= static_cast<u8>(1u << (node_index % 8));
             }
             packet->time_off_path = 0.0f;
             movement_source_flags = packet->field_0x1e7;
@@ -2534,12 +3006,15 @@ extern "C" {
     }
 
     void AddToAIGroup(AIGROUP *group, APIOBJECT *object) {
-        if (group == NULL || object == NULL || group->member_count >= 16 || group->count_across == 0) {
+        if (object == NULL || group == NULL || group->member_count >= 16) {
             return;
         }
 
         const u8 member_index = group->member_count;
-        const i32 row_count = (member_index + group->count_across) / group->count_across;
+        const u32 count_across = group->count_across;
+        i32 row_count = static_cast<i32>(NuFdiv(static_cast<f32>(member_index + 1), static_cast<f32>(count_across)));
+        if ((member_index + 1) % group->count_across != 0)
+            ++row_count;
         if (row_count > 4) {
             return;
         }
@@ -2547,11 +3022,8 @@ extern "C" {
         if (member_index == 0) {
             group->leader = object;
             if (group->x_spacing > 0.0f) {
-                group->radius = (group->count_across - 1) * group->x_spacing * 0.5f;
-                const f32 turn_radius_per_frame = group->radius * 0.016666668f;
-                group->rotation_speed = turn_radius_per_frame != 0.0f
-                                            ? static_cast<i16>(group->max_speed / turn_radius_per_frame * 10430.378f)
-                                            : 0;
+                group->radius = (static_cast<f32>(count_across) - 1.0f) * group->x_spacing * 0.5f;
+                group->rotation_speed = static_cast<i32>(10430.378f * NuFdiv(group->max_speed, group->radius * 60.0f));
             } else {
                 group->radius = 0.0f;
                 group->rotation_speed = 100;
@@ -2560,11 +3032,12 @@ extern "C" {
 
         group->row_count = static_cast<u8>(row_count);
         object->ai->group = group;
-        object->ai->group_member_index = member_index;
-        object->ai->group_row = member_index / group->count_across;
-        object->ai->group_column = member_index % group->count_across;
-        group->members[member_index] = object;
-        group->member_count = member_index + 1;
+        object->ai->group_member_index = group->member_count;
+        object->ai->group_row = static_cast<i32>(NuFdiv(static_cast<f32>(static_cast<u32>(group->member_count)),
+                                                       static_cast<f32>(static_cast<u32>(group->count_across))));
+        object->ai->group_column = group->member_count % group->count_across;
+        group->members[group->member_count] = object;
+        ++group->member_count;
     }
 
     void AiRndrLine3d(void) {
@@ -2634,48 +3107,143 @@ extern "C" {
         NuVecMtxRotate(out, out, matrix);
     }
 
-    AIGROUP *CreateAIGroup(AISYS *system, u8 count_across, f32 x_spacing, f32 z_spacing, f32 max_speed) {
-        if (system == NULL || count_across == 0) {
+    AIGROUP *CreateAIGroup(AISYS *system, i32 count_across, f32 x_spacing, f32 z_spacing, f32 max_speed) {
+        if (count_across == 0 || system == NULL) {
             return NULL;
         }
 
-        for (i32 index = 0; index < 16; ++index) {
-            AIGROUP *group = &system->groups[index];
-            if (group->is_used != 0) {
-                continue;
-            }
-
-            group->is_used = 1;
-            group->count_across = count_across;
-            group->x_spacing = x_spacing;
-            group->z_spacing = z_spacing;
-            group->is_in_formation = 0;
-            group->max_speed = max_speed;
-            return group;
+        i32 index;
+        AIGROUP *group;
+        for (index = 0; index < 16; ++index) {
+            group = &system->groups[index];
+            if (group->is_used == 0)
+                break;
         }
-        return NULL;
+        if (index == 16)
+            return NULL;
+        system->groups[index].is_used = 1;
+        group->count_across = count_across;
+        group->x_spacing = x_spacing;
+        group->z_spacing = z_spacing;
+        group->is_in_formation = 0;
+        group->max_speed = max_speed;
+        return group;
     }
 
-    void DestroyAIGroup(void) {
+    void DestroyAIGroup(AIGROUP *group) {
+        if (group != NULL)
+            memset(group, 0, sizeof(*group));
     }
 
-    void FindAIDirectionedRandomPointOnNetwork2D(void) {
+    void FindAIDirectionedRandomPointOnNetwork2D(AIPACKET *packet, NUVEC *position, NUVEC *direction, f32 distance,
+                                                 f32 offset, i32 flags, NUVEC *result) {
+        AIPATHCNX *connection = packet->path_info.connection;
+        if (connection == NULL) {
+            *result = packet->owner->apiobj.position;
+            return;
+        }
+
+        f32 direction_x = direction->x;
+        f32 direction_z = direction->z;
+        AIPATHNODE *nodes = packet->path_info.path->nodes;
+        AIPATHNODE *start = &nodes[connection->direction_a];
+        AIPATHNODE *end = &nodes[connection->direction_b];
+        f32 dx = end->position.x - start->position.x;
+        f32 dz = end->position.z - start->position.z;
+        if (direction_x * dx + direction_z * dz < 0.0f) {
+            dx = start->position.x - end->position.x;
+            dz = start->position.z - end->position.z;
+            AIPATHNODE *swap = start;
+            start = end;
+            end = swap;
+        }
+        f32 length = connection->horizontal_distance;
+        dx /= length;
+        dz /= length;
+        if ((flags & 2) != 0) {
+            distance *= length;
+        }
+        f32 along = (position->x - start->position.x) * dx + (position->z - start->position.z) * dz + distance;
+        if (along > length || along < 0.0f) {
+            AIPATHNODE *junction = along < 0.0f ? start : end;
+            i32 best_index = -1;
+            f32 best_dot = -FLT_MAX;
+            for (i32 index = 0; index < junction->connection_count; ++index) {
+                AIPATHCNX *candidate = junction->connections[index];
+                if (candidate == connection) {
+                    continue;
+                }
+                AIPATHNODE *candidate_start = &nodes[candidate->direction_a];
+                AIPATHNODE *candidate_end = &nodes[candidate->direction_b];
+                dx = candidate_end->position.x - candidate_start->position.x;
+                dz = candidate_end->position.z - candidate_start->position.z;
+                i32 reverse = 0;
+                if (direction_x * dx + direction_z * dz < 0.0f) {
+                    dx = candidate_start->position.x - candidate_end->position.x;
+                    dz = candidate_start->position.z - candidate_end->position.z;
+                    reverse = 1;
+                }
+                dx /= candidate->horizontal_distance;
+                dz /= candidate->horizontal_distance;
+                if ((candidate->traversal_flags[reverse] & 0xc0000000u) == 0) {
+                    f32 dot = direction_x * dx + direction_z * dz;
+                    if (dot > best_dot) {
+                        best_dot = dot;
+                        best_index = index;
+                    }
+                }
+            }
+            if (best_index != -1) {
+                connection = junction->connections[best_index];
+                if (along < 0.0f) {
+                    length = connection->horizontal_distance;
+                    along += length;
+                } else {
+                    along -= length;
+                    length = connection->horizontal_distance;
+                }
+                start = &nodes[connection->direction_a];
+                end = &nodes[connection->direction_b];
+                dx = end->position.x - start->position.x;
+                dz = end->position.z - start->position.z;
+                if (direction_x * dx + direction_z * dz < 0.0f) {
+                    dx = start->position.x - end->position.x;
+                    dz = start->position.z - end->position.z;
+                    AIPATHNODE *swap = start;
+                    start = end;
+                    end = swap;
+                }
+                dx /= length;
+                dz /= length;
+            }
+        }
+        f32 fraction = NuFmin(NuFmax(along / length, 0.0f), 1.0f);
+        f32 inverse_fraction = 1.0f - fraction;
+        f32 radius = fraction * end->radius + inverse_fraction * start->radius;
+        along = connection->horizontal_distance * fraction;
+        if ((flags & 1) != 0) {
+            offset *= radius;
+        }
+        offset = NuFmin(NuFmax(offset, -radius), radius);
+        result->x = start->position.x + along * dx + dz * offset;
+        result->y = fraction * end->position.y + inverse_fraction * start->position.y;
+        result->z = start->position.z + along * dz - dx * offset;
     }
 
     void FollowAPIObject(APIOBJECT *object, APIOBJECT *target, i32 flags, f32 movement_parameter) {
-        AIPACKET *packet = object->ai;
-        AIPACKET *target_packet = target->ai;
+        AIPACKET *packet;
+        AIPACKET *target_packet;
 
         NUVEC *destination;
         i32 movement_mode;
-        if ((flags & 1) == 0) {
-            destination = &target_packet->last_path_position;
-            movement_mode = AIPACKET_MOVEMENT_TO_DESTINATION;
-        } else {
+        if ((flags & 1) != 0) {
+            packet = object->ai;
+            target_packet = target->ai;
             bool use_target_path_position = false;
             AIPATH *path = packet->path_info.path;
             if (path != NULL && path == target_packet->path_info.path) {
-                if ((target_packet->path_info.flags & AIPATHINFO_FLAG_ON_PATH) != 0 &&
+                if (((target_packet->path_info.flags & AIPATHINFO_FLAG_ON_PATH) != 0 ||
+                     packet->path_info.connection != target_packet->path_info.connection) &&
                     packet->path_info.connection != NULL && target_packet->path_info.connection != NULL &&
                     (packet->runtime_flags & AIPACKET_RUNTIME_ROUTE_SELECTED) == 0) {
                     const u8 object_direction = packet->path_info.connection->direction_a;
@@ -2694,6 +3262,11 @@ extern "C" {
                 destination = &target_packet->terrain_origin;
                 movement_mode = AIPACKET_MOVEMENT_DIRECT;
             }
+        } else {
+            packet = object->ai;
+            target_packet = target->ai;
+            destination = &target_packet->last_path_position;
+            movement_mode = AIPACKET_MOVEMENT_TO_DESTINATION;
         }
 
         const f32 stopping_distance = (flags & 2) != 0 ? 0.0f : target_packet->mover_height;

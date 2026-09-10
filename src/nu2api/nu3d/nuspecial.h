@@ -11,6 +11,14 @@
 
 struct nuinstanim_s;
 
+enum NUSPECIAL_DRAW_FLAGS {
+    NUSPECIAL_DRAW_MATERIAL_MAP = 1 << 2,
+    NUSPECIAL_DRAW_FORCE_MATERIAL = 1 << 3,
+};
+
+f32 NuSpecialGetAnimPos(nuhspecial_s *special);
+void NuSpecialReflection(i32 reflection);
+
 enum NULEGACYINSTANCE_FLAGS : u8 {
     NULEGACYINSTANCE_FLAG_VISIBLE = 1 << 0,
     NULEGACYINSTANCE_FLAG_NO_VISIBILITY_TEST = 1 << 3,
@@ -22,6 +30,7 @@ enum NULEGACYSPECIAL_FLAGS : u32 {
 
 enum NUDISPLAYSPECIAL_FLAGS : u32 {
     NUDISPLAYSPECIAL_FLAG_VISIBLE = 1 << 1,
+    NUDISPLAYSPECIAL_FLAG_ON_SCREEN = 1 << 2,
     NUDISPLAYSPECIAL_FLAG_NO_VISIBILITY_TEST = 1 << 7,
     NUDISPLAYSPECIAL_FLAG_COLLISION = 1 << 9,
     NUDISPLAYSPECIAL_FLAG_MATRIX_UPDATED = 1 << 10,
@@ -56,6 +65,7 @@ DECOMP_ASSERT(offsetof(NUDISPLAYSPECIAL, flags) == 0xb8, "display special flags 
 
 extern "C" {
     void NuGScnGetSpecial(nuhspecial_s *special, NUGSCN *scene, i32 index);
+    i32 NuGScnNumSpecials(NUGSCN *scene);
     i32 NuSpecialGetNumSpecials(NUGSCN *scene);
     i32 NuSpecialGetFirst(NUGSCN *scene, nuhspecial_s *special, i32 flags);
     void NuSpecialGetNext(nuhspecial_s *special);
@@ -66,9 +76,21 @@ extern "C" {
     i32 NuSpecialGetOnScreenFn(nuhspecial_s *special);
     void NuSpecialClear(void *special);
     void NuSpecialGetBounds(void *special, NUVEC *minimum, NUVEC *maximum);
+    void NuSpecialSetBounds(nuhspecial_s *special, NUVEC *minimum, NUVEC *maximum);
     void NuSpecialGetRadius(void *special, NUVEC *position, f32 *radius);
     f32 NuSpecialGetAnimEndFrame(nuhspecial_s *special);
     nuinstanim_s *NuSpecialGetInstAnim(nuhspecial_s *special);
+    void NuSpecialSetInstAnimTime(nuhspecial_s *special, f32 frame);
+    i32 NuSpecialTestAnim(nuhspecial_s *special);
+    void NuSpecialSetMtx(nuhspecial_s *special, NUMTX *matrix);
+    void NuSpecialSetCollision(nuhspecial_s *special, i32 enabled);
+    i32 NuSpecialGetCollision(nuhspecial_s *special);
+    i32 NuSpecialForceToAlpha(nuhspecial_s *special);
+    NUMTL *NuSpecialGetMtl(nuhspecial_s *special, i32 index);
+    void NuSpecialMtl(NUMTL *material);
+    void NuSpecialForceMtl(NUMTL *material);
+    void NuSpecialMtlMap(i32 count, NUMTL **materials);
+    i32 NuSpecialNumMtls(nuhspecial_s *special);
     NUMTX *NuSpecialGetInstanceMtx(nuhspecial_s *special);
     i32 NuSpecialGetInstanceix(nuhspecial_s *special);
     char *NuSpecialGetName(nuhspecial_s *special);
@@ -84,7 +106,9 @@ extern "C" {
     i32 NuSpecialGetOnScreenFn(nuhspecial_s *special);
     i32 NuSpecialGetNoVisiTestFn(nuhspecial_s *special);
     void NuSpecialSetNoVisiTest(nuhspecial_s *special, i32 enabled);
-    void NuSpecialSetDrawPos(void *special, void *pos);
+    void NuSpecialSetOnScreen(nuhspecial_s *special, i32 enabled);
+    void NuSpecialSetInstanceMtx(nuhspecial_s *special, NUMTX *matrix);
+    void NuSpecialSetDrawPos(nuhspecial_s *special, NUVEC *pos);
     i32 NuSpecialClipTestExtents(void *special, void *mtx);
     i32 NuSpecialSetClipping(i32 enabled, i32 state);
     void NuSpecialConstAlpha(i32 enabled, f32 alpha);

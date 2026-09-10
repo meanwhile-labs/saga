@@ -2,8 +2,13 @@
 
 #include <stdint.h>
 
-#include "decomp_assert.h"
 #include "nu2api/nucore/common.h"
+
+#if defined(__cplusplus) && !defined(HOST_BUILD) && !defined(__clang__)
+#define DECOMP_ASSERT(condition, message) static_assert(condition, message)
+#else
+#define DECOMP_ASSERT(condition, message)
+#endif
 
 DECOMP_ASSERT(sizeof(void *) == 4, "Unsupported pointer size");
 
@@ -98,7 +103,8 @@ static const char *__ansi_reset = "\x1b[0m";
 
 static const enum log_level LOG_LEVEL = LOG_LEVEL_INFO;
 
-static void _saga_log(enum log_level level, const char *file, i32 line, const char *func, const char *fmt, ...) {
+static void __used__ _saga_log(enum log_level level, const char *file, i32 line, const char *func, const char *fmt,
+                               ...) {
     if (level > LOG_LEVEL) {
         return;
     }
@@ -126,6 +132,12 @@ static void _saga_log(enum log_level level, const char *file, i32 line, const ch
 #define LOG_WARN(...) LOG(LOG_LEVEL_WARN, __VA_ARGS__)
 #define LOG_INFO(...) LOG(LOG_LEVEL_INFO, __VA_ARGS__)
 #define LOG_DEBUG(...) LOG(LOG_LEVEL_DEBUG, __VA_ARGS__)
+#define LOG_INFO_IF(condition, ...)                                                                                    \
+    do {                                                                                                               \
+        if (condition) {                                                                                               \
+            LOG_INFO(__VA_ARGS__);                                                                                     \
+        }                                                                                                              \
+    } while (0)
 
 #define UNIMPLEMENTED(...) LOG_ERR("UNIMPLEMENTED: %s", #__VA_ARGS__)
 
@@ -148,5 +160,6 @@ static void _saga_log(enum log_level level, const char *file, i32 line, const ch
 #define LOG_WARN(...)
 #define LOG_INFO(...)
 #define LOG_DEBUG(...)
+#define LOG_INFO_IF(condition, ...)
 
 #endif

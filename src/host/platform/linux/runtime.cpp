@@ -23,3 +23,9 @@ ANativeWindow *HostPlatformNativeWindow(SDL_Window *window) {
     const i32 handle = static_cast<i32>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
     return reinterpret_cast<ANativeWindow *>(handle);
 }
+
+// Recovery instrumentation is limited to the particle editor translation unit.
+// Other ASan-instrumented code retains its non-recovering report calls.
+extern "C" __attribute__((weak)) const char *__asan_default_options() {
+    return "halt_on_error=0";
+}

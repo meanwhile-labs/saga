@@ -57,7 +57,6 @@ NUMTL *NuMtlCreate3D(i32 count);
 
 extern "C" {
     // nucore / nurndr plain stubs and editor helpers (extern "C" TUs).
-    void NuStringFilterLoad(char *, VARIPTR *, VARIPTR *);
     f32 NuIOS_GetAspectRatio(void);
     i32 NuIOS_GetDeviceLanguage(void);
     void NuLanguageSet(i32 language);
@@ -164,7 +163,7 @@ void CutScene_PostUpdateFn_LSW(void);
 void CutScene_StoppedFn_LSW(CUTINFO *);
 i32 CutScene_ReplaceCharacterModelFn_LSW(CUTINFO *, NUGCUTCHAR_s *);
 i32 InitBolt_AddMomentumType_LSW(BOLT_s *, GameObject_s *, nuvec_s *);
-void Bolt_HitPlatFn_LSW(BOLT_s *);
+i32 Bolt_HitPlatFn_LSW(BOLT_s *);
 void Bolt_HitCustomFn_LSW(BOLT_s *, nuvec_s *);
 void GameBlowUpBlownUpFn_LSW(GIZMOBLOWUP_s *);
 void GizObstacle_SetDefaultSFXFn_LSW(void *, GIZOBSTACLE_s *);
@@ -263,7 +262,7 @@ static void LoadPermData(BGPROCINFO *proc) {
 
     MechSystems::Get()->LoadPerm();
 
-    NuStringFilterLoad((char *)"stuff\\text\\badwords.txt", &permbuffer_ptr, &permbuffer_end);
+    NuStringFilterLoad((char *)"stuff\\text\\badwords.txt", &permbuffer_ptr, permbuffer_end);
 
     // Audio / rendering permanents.
     MusicInfo = ConfigureMusic((char *)"audio\\music.txt", &permbuffer_ptr, &permbuffer_end);

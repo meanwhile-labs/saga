@@ -48,7 +48,7 @@ extern "C" void VuQuatSlerpFast(NUQUAT *out, NUQUAT *from, NUQUAT *to, f32 t);
 void EvalAnim(nuhspecial_s *special, f32 frame, numtx_s *matrix, i32 include_instance_translation);
 bool UseFallAnim(GameObject_s *object);
 i32 GetDefaultIdle(GameObject_s *object);
-void SetProtocolDroidFallAnim(GameObject_s *object);
+i32 SetProtocolDroidFallAnim(GameObject_s *object);
 // TODO: Restore target-local linkage once the four remaining animation-mode
 // callers are decompiled; their references naturally prevent inlining.
 static void MoveAnim_Manage(GameObject_s *object, f32 movement_speed, i32 allow_tiptoe, i32 weapon_variant);
@@ -1003,61 +1003,73 @@ void Animate_PROTOCOL(GameObject_s *object) {
     ANIMPACKET_s &packet = object->apiobj.anim_packet;
     if ((CInfo[object->character_context].flags & CHARACTER_CONTEXT_INFO_FLAG_OWNS_ANIMATION) != 0) {
         packet.requested_animation = object->context_animation;
-    } else if (object->context_target_position != NULL) {
-        SetProtocolDroidFallAnim(object);
-    } else {
+        goto final_animation;
+    }
+    if (object->context_target_position != NULL) {
+        packet.requested_animation = static_cast<i16>(SetProtocolDroidFallAnim(object));
+        goto final_animation;
+    }
+    packet.requested_animation = CHARACTER_ANIMATION_FALL;
+    if (object->character_context == CHARACTER_CONTEXT_DOOMED)
+        goto falling;
+    if (object->apiobj.field_0x27d != 0)
+        goto idle;
+    if (object->ground_contact_grace_timer > 0.0f)
+        goto check_fall;
+    if (object->apiobj.character_model->model_data_b[CHARACTER_ANIMATION_FALL] == NULL)
+        goto check_fall;
+    if (!(object->fall_animation_timer < 0.2f) || object->nearby_floor_distance == 2000000.0f ||
+        !(object->nearby_floor_distance < 0.25f) || !(object->apiobj.velocity.y < 0.0f))
+        goto falling;
+check_fall:
+    if (!(GetGameCharacterData(object)->field_0x28 <= 0.0f) &&
+        object->apiobj.character_model->model_data_b[CHARACTER_ANIMATION_FALL] != NULL)
+        goto falling;
+idle:
+    packet.requested_animation = static_cast<i16>(GetDefaultIdle(object));
+    if (packet.requested_animation == CHARACTER_ANIMATION_FALL)
+        goto falling;
+    switch (object->field_0xe38) {
+        case 1:
+            packet.requested_animation = 8;
+            break;
+        case 2:
+            packet.requested_animation = 20;
+            break;
+        case 3:
+            packet.requested_animation = 15;
+            break;
+        default:
+            packet.requested_animation = 1;
+            break;
+    }
+    if (UseFallAnim(object)) {
         packet.requested_animation = CHARACTER_ANIMATION_FALL;
-        if (object->character_context != CHARACTER_CONTEXT_DOOMED &&
-            object->character_context != CHARACTER_CONTEXT_JUMP) {
-            bool use_default_idle = object->apiobj.field_0x27d != 0;
-            if (!use_default_idle) {
-                const bool has_fall = object->apiobj.character_model->model_data_b[CHARACTER_ANIMATION_FALL] != NULL;
-                if (object->ground_contact_grace_timer > 0.0f) {
-                    const GAMECHARACTERDATA *game_character = GetGameCharacterData(object);
-                    use_default_idle = game_character->field_0x28 <= 0.0f || !has_fall;
-                } else if (!has_fall) {
-                    use_default_idle = true;
-                } else if (object->fall_animation_timer < 0.2f && object->nearby_floor_distance != 2000000.0f &&
-                           object->nearby_floor_distance < 0.25f && object->apiobj.velocity.y < 0.0f) {
-                    use_default_idle = true;
-                }
-            }
-            if (use_default_idle) {
-                packet.requested_animation = static_cast<i16>(GetDefaultIdle(object));
-                if (packet.requested_animation != CHARACTER_ANIMATION_FALL) {
-                    switch (object->field_0xe38) {
-                        case 1:
-                            packet.requested_animation = 8;
-                            break;
-                        case 2:
-                            packet.requested_animation = 20;
-                            break;
-                        case 3:
-                            packet.requested_animation = 15;
-                            break;
-                        default:
-                            packet.requested_animation = CHARACTER_ANIMATION_IDLE;
-                            break;
-                    }
-                }
-            }
-        }
-
-        if (object->character_context == CHARACTER_CONTEXT_JUMP) {
-            SetProtocolDroidFallAnim(object);
-        }
-        if (UseFallAnim(object)) {
-            SetProtocolDroidFallAnim(object);
-        } else if (packet.requested_animation != CHARACTER_ANIMATION_FALL &&
-                   (object->pad_gamepad->allocated_5a & GAMEPAD_RUNTIME_SUPPRESS_MOVEMENT) == 0 &&
-                   object->pad_gamepad->input_magnitude > 0.0f) {
-            packet.requested_animation = CHARACTER_ANIMATION_WALK;
+    } else if ((object->pad_gamepad->allocated_5a & GAMEPAD_RUNTIME_SUPPRESS_MOVEMENT) == 0 &&
+               object->pad_gamepad->input_magnitude > 0.0f) {
+        switch (object->field_0xe38) {
+            case 1:
+                packet.requested_animation = 29;
+                break;
+            case 2:
+                packet.requested_animation = 23;
+                break;
+            case 3:
+                packet.requested_animation = 3;
+                break;
+            default:
+                packet.requested_animation = 0;
+                break;
         }
     }
-
-    if (packet.requested_animation == CHARACTER_ANIMATION_FALL) {
-        SetProtocolDroidFallAnim(object);
-    }
+    goto final_animation;
+falling:
+    packet.requested_animation = static_cast<i16>(SetProtocolDroidFallAnim(object));
+    if (UseFallAnim(object))
+        packet.requested_animation = CHARACTER_ANIMATION_FALL;
+final_animation:
+    if (packet.requested_animation == CHARACTER_ANIMATION_FALL)
+        packet.requested_animation = static_cast<i16>(SetProtocolDroidFallAnim(object));
     UpdateCharacterIdle(object);
     const i16 animation = packet.requested_animation;
     if (animation == CHARACTER_ANIMATION_FALL ||
@@ -1396,25 +1408,20 @@ void Animate_BATTLEDROID(GameObject_s *object) {
         if (object->apiobj.character_model->model_data_b[43] != NULL) {
             packet.requested_animation = 43;
         } else {
-            const i32 target_state =
-                *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(object->context_target_position) + 0x14);
-            packet.requested_animation = target_state == 0 ? CHARACTER_ANIMATION_IDLE : CHARACTER_ANIMATION_FALL;
+            packet.requested_animation = object->apiobj.character_model->model_data_b[CHARACTER_ANIMATION_FALL] == NULL
+                                             ? CHARACTER_ANIMATION_IDLE
+                                             : CHARACTER_ANIMATION_FALL;
         }
     } else {
         packet.requested_animation = CHARACTER_ANIMATION_FALL;
-        if (object->character_context != CHARACTER_CONTEXT_DOOMED &&
-            object->character_context != CHARACTER_CONTEXT_JUMP) {
+        if (object->character_context != CHARACTER_CONTEXT_DOOMED) {
             bool use_default_idle = object->apiobj.field_0x27d != 0;
             if (!use_default_idle) {
                 const bool has_fall = object->apiobj.character_model->model_data_b[CHARACTER_ANIMATION_FALL] != NULL;
-                if (object->ground_contact_grace_timer > 0.0f) {
-                    const GAMECHARACTERDATA *game_character = GetGameCharacterData(object);
-                    use_default_idle = game_character->field_0x28 <= 0.0f || !has_fall;
-                } else if (!has_fall) {
-                    use_default_idle = true;
-                } else if (object->fall_animation_timer < 0.2f && object->nearby_floor_distance != 2000000.0f &&
-                           object->nearby_floor_distance < 0.25f && object->apiobj.velocity.y < 0.0f) {
-                    use_default_idle = true;
+                if (object->ground_contact_grace_timer > 0.0f || !has_fall ||
+                    (object->fall_animation_timer < 0.2f && object->nearby_floor_distance != 2000000.0f &&
+                     object->nearby_floor_distance < 0.25f && object->apiobj.velocity.y < 0.0f)) {
+                    use_default_idle = GetGameCharacterData(object)->field_0x28 <= 0.0f || !has_fall;
                 }
             }
             if (use_default_idle) {
@@ -3097,6 +3104,29 @@ extern "C" {
         *value = new_value;
         *index = static_cast<u8>(selected);
         return old_value != new_value;
+    }
+
+    void NuSpecialSetInstAnimTime(nuhspecial_s *special, f32 frame) {
+        NUGSCN *scene = special->scene;
+        if (scene == NULL) {
+            return;
+        }
+        nuinstanim_s *animation = NuSpecialGetInstAnim(special);
+        if (animation == NULL) {
+            return;
+        }
+        animation->ltime = frame;
+        if ((animation->end_frame_lookup_bits & NUINSTANIM_END_FRAME_LOOKUP_MASK) != 0 &&
+            scene->animation_end_frames != NULL) {
+            StateAnim *state =
+                reinterpret_cast<StateAnim *>(&scene->animation_end_frames[animation->end_frame_lookup_index - 1]);
+            u8 index = static_cast<u8>(static_cast<u32>(animation->flags) >> NUINSTANIM_STATE_INDEX_SHIFT);
+            char value;
+            StateAnimEvaluate2(state, &index, &value, frame);
+            animation->flags =
+                static_cast<NUINSTANIM_FLAGS>((static_cast<u32>(animation->flags) & ~NUINSTANIM_STATE_INDEX_MASK) |
+                                              (static_cast<u32>(index) << NUINSTANIM_STATE_INDEX_SHIFT));
+        }
     }
 
     StateAnim *StateAnimFixPtrs(StateAnim *state, isize delta) {

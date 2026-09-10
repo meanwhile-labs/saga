@@ -4,10 +4,10 @@
 #include "gameapi/ai/aisys/aimessage_types.h"
 
 #include "nu2api/nu3d/ShaderManagerOpenGL.h"
-#include "decomp_assert.h"
+#include "decomp.h"
 #include "nu2api/nucore/fixed_width.h"
 #include "nu2api/nucore/numemory.h"
-#include "decomp_assert.h"
+#include "decomp.h"
 #include "nu2api/nucore/nulist.h"
 #include "nu2api/nucore/nuanim3.h"
 #include "nu2api/nu3d/nuhspecial.h"
@@ -707,7 +707,22 @@ struct CHARPLATFORMSYS_s {
 DECOMP_ASSERT(offsetof(CHARPLATFORMSYS_s, platforms) == 0x8, "CHARPLATFORMSYS platforms offset");
 struct CHARVARIANT {};
 struct CHEAT;
-struct CLIMBOBJECTSYS_s {};
+struct CLIMBOBJECT_s {
+    NUVEC normal;
+    f32 impact_x;
+    f32 impact_z;
+    AIPATHCNX_s *connection;
+    AIPATH_s *path;
+    u8 flags;
+    u8 field_0x1d[3];
+};
+struct CLIMBOBJECTSYS_s {
+    CLIMBOBJECT_s *objects;
+    u16 count;
+    u16 capacity;
+};
+DECOMP_ASSERT(sizeof(CLIMBOBJECT_s) == 0x20, "CLIMBOBJECT_s size");
+DECOMP_ASSERT(sizeof(CLIMBOBJECTSYS_s) == 8, "CLIMBOBJECTSYS_s size");
 struct CUSTOMISER {
     union {
         u8 pad_0x00[0x6c];
@@ -1778,7 +1793,10 @@ struct HINT_s {
     i32 shop_price;       // 0x08: consumed by InitShop
     f32 display_duration; // 0x0c; zero has no timed cancellation
     f32 repeat_delay;     // 0x10
-    u8 pad_0x14[4];
+    union {
+        u8 pad_0x14[4];
+        i32 (*availability_fn)(HINT_s *);
+    };
     void (*on_display)(HINT_s *); // 0x18
     u8 completion_flags[4];       // 0x1c
     f32 field_0x20;
@@ -1799,7 +1817,10 @@ struct HINTSYS_s {
         i32 current_hint;
         f32 display_elapsed; // 0x18
     };
-    i32 field_0x1c;
+    union {
+        i32 field_0x1c;
+        f32 alpha;
+    };
 };
 DECOMP_ASSERT(sizeof(HINTSYS_s) == 0x20, "HINTSYS_s size");
 struct HINTUIBUTTON_s {
@@ -1822,8 +1843,9 @@ struct HINTUIBUTTON_s {
     f32 field_0x98;
     u8 pad_0x9c[0xa0 - 0x9c];
     u8 field_0xa0;
+    f32 field_0xa4;
 };
-DECOMP_ASSERT(sizeof(HINTUIBUTTON_s) == 0xa4, "HINTUIBUTTON_s size");
+DECOMP_ASSERT(sizeof(HINTUIBUTTON_s) == 0xa8, "HINTUIBUTTON_s size");
 DECOMP_ASSERT(offsetof(HINTUIBUTTON_s, field_0x7c) == 0x7c, "HINTUIBUTTON_s pending hint offset");
 struct HOTHBATTLE_MELEE_s {};
 struct HashRedirect;
@@ -1890,7 +1912,12 @@ struct PLATSKINMEMINFO {
 };
 DECOMP_ASSERT(sizeof(PLATSKINMEMINFO) == 8, "PLATSKINMEMINFO ABI");
 struct PLAYERITEMTYPE_s {};
-struct PLAYERITEM_s {};
+struct PLAYERITEM_s {
+    u8 *type;
+    u8 ammunition;
+    u8 reserved[3];
+};
+DECOMP_ASSERT(sizeof(PLAYERITEM_s) == 8, "PLAYERITEM size");
 
 // Per-player runtime state embedded at GameObject_s + 0x6b4.  The packet is
 // reset independently of the rest of the object by ResetPlayerPacket and is
@@ -3027,7 +3054,9 @@ struct edpp_particle_s {
     NUVEC position;
     i32 effect_index;
     i32 instance_id;
-    u8 pad_0x14[0x58 - 0x14];
+    u8 pad_0x14[0x51 - 0x14];
+    i8 page;
+    u8 pad_0x52[0x58 - 0x52];
 };
 DECOMP_ASSERT(sizeof(edpp_particle_s) == 0x58, "edpp_particle_s ABI");
 struct pushblock_s {
@@ -4570,7 +4599,10 @@ struct PART_s {
     i8 field_207;
     u8 field_208, field_209, field_20a;
     i8 field_20b;
-    u32 field_20c;
+    union {
+        u32 field_20c;
+        f32 crate_spawn_delay;
+    };
     f32 field_210, field_214;
     union {
         u32 force_flags;

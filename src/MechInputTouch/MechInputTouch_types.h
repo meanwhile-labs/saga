@@ -10,7 +10,7 @@
 #include "legoapi/render/core/SwipeDecalRenderer.h"
 #include "nu2api/nucore/NuTouchInputElement.h"
 #include "nu2api/nucore/nuvuvec.hpp"
-#include "decomp_assert.h"
+#include "decomp.h"
 
 struct AIPATHCNX_s;
 struct AIPATH_s;
@@ -104,21 +104,21 @@ struct MechInputTouchGestureTracker {
 typedef void (*MechTouchUICallback)(MechTouchUIElement &, TouchHolder &);
 float GetAspectRatio();
 
-struct MechTouchUIElement {
+struct MechTouchUIElement : NuMechPtr<MechTouchUIElement, 4>::ManagedBase {
     MechTouchUIElement()
-        : managed_links(NULL), position(), radius_x(0.0f), radius_y(0.0f), on_down(NULL), on_click(NULL), on_hold(NULL),
+        : position(), radius_x(0.0f), radius_y(0.0f), on_down(NULL), on_click(NULL), on_hold(NULL),
           on_release(NULL), on_leave(NULL), hovered(0), disabled(0), visible(1), rectangular(0), owner(NULL) {
     }
     MechTouchUIElement(VuVec const &pos, float radius)
-        : managed_links(NULL), position(pos), radius_x(GetAspectRatio() * radius), radius_y(radius), on_down(NULL),
+        : position(pos), radius_x(GetAspectRatio() * radius), radius_y(radius), on_down(NULL),
           on_click(NULL), on_hold(NULL), on_release(NULL), on_leave(NULL), hovered(0), disabled(0), visible(1),
           owner(NULL) {
     }
-    virtual ~MechTouchUIElement();
+    virtual ~MechTouchUIElement() {
+    }
     virtual void Process(float);
     virtual void Render();
 
-    void *managed_links;
     VuVec position;
     float radius_x;
     float radius_y;
@@ -407,6 +407,7 @@ struct MechInputTouchSystem {
     i32 control_mode;
 };
 struct MechInputTouchVirtualConsoleController {
+    static i16 s_textures[9];
     static float s_defaultDPadPosX;
     static float s_defaultDPadPosY;
     static float s_defaultButtonsPosX;
@@ -916,8 +917,13 @@ struct MechTouchUITexButton : MechTouchUIElement {
     void Render() override;
     void UpdateTexture(i16);
     ~MechTouchUITexButton() override;
-    u8 field_0x3c[0x90 - 0x3c];
+    struct numtl_s *material;
+    f32 *alpha_target;
+    f32 alpha_from, alpha_to, alpha_elapsed, alpha_duration, alpha_delay, alpha;
+    f32 *scale_target;
+    f32 scale_from, scale_to, scale_elapsed, scale_duration, scale_delay, scale;
 };
+DECOMP_ASSERT(sizeof(MechTouchUITexButton) == 0x78, "MechTouchUITexButton size");
 
 DECOMP_ASSERT(sizeof(NuVec2) == 0x8, "NuVec2 size");
 DECOMP_ASSERT(sizeof(MechInputTouchGestureTracker) == 0x4, "MechInputTouchGestureTracker size");

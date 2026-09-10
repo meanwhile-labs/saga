@@ -10,6 +10,11 @@
 #include "nu2api/nucore/nustring.h"
 #include "nu2api/nu3d/nutex.h"
 #include "nu2api/numath/nuvec.h"
+#include "nu2api/numath/numtx.h"
+#include "nu2api/nu3d/nuspecial.h"
+#include "legoapi/render/fx.h"
+#include "legoapi/render/fx/parts.h"
+#include "legoapi/audio/sfx.h"
 
 struct AIROW_s;
 struct nuqthdr_s;
@@ -40,7 +45,7 @@ void AICreatureResumeScript(GameObject_s *object) {
 
 extern "C" {
     extern NUVEC plr_lastpos;
-    AIGROUP *CreateAIGroup(AISYS *system, u8 count_across, f32 x_spacing, f32 z_spacing, f32 max_speed);
+    AIGROUP *CreateAIGroup(AISYS *system, i32 count_across, f32 x_spacing, f32 z_spacing, f32 max_speed);
     void AddToAIGroup(AIGROUP *group, APIOBJECT *object);
     void AISysCharacterSetPath(AIPACKET *packet, AIPATH *path);
     void AISysCharacterSetPathCnx(AIPACKET *packet, NUVEC *position, AIPATHCNX *connection, i32 direction);
@@ -80,7 +85,7 @@ void InitAICreatures(AISYS_s *system) {
             continue;
         }
 
-        const i32 count = creature.count;
+        i32 count = creature.count;
         if (count == 0) {
             continue;
         }
@@ -96,6 +101,7 @@ void InitAICreatures(AISYS_s *system) {
 
             GameObject_s *object = AddCreature(creature.type, 1);
             if (object == NULL) {
+                count = creature.count;
                 continue;
             }
 
@@ -105,13 +111,13 @@ void InitAICreatures(AISYS_s *system) {
             const u32 model_flags = apicharsys->char_data[creature.type].model_flags;
             if ((model_flags & 0x200) != 0) {
                 object->apiobj.field_0x1f4 |= 0x404;
-            } else if ((model_flags & 0x400) != 0) {
+            } else if ((model_flags & 0x4) != 0) {
                 object->apiobj.field_0x1f4 |= 0x401;
             }
             object->field_0x1050 |= (model_flags & 0x1000) != 0 ? 5 : 1;
             object->ai.field_0x134 = static_cast<u8>(creature_index);
 
-            if (member == 0 && count > 1 && creature.start_stagger == 0.0f) {
+            if (member == 0 && creature.count > 1 && creature.start_stagger == 0.0f) {
                 GAMECHARACTERDATA *character =
                     static_cast<GAMECHARACTERDATA *>(object->apiobj.character_data->field11_0x24);
                 group = CreateAIGroup(system, creature.count_across, creature.x_spacing, creature.z_spacing,
@@ -125,6 +131,7 @@ void InitAICreatures(AISYS_s *system) {
             object->ai.locator = creature.locator;
             object->ai.respawn_locator = creature.respawn_locator;
             object->ai.creature_set = creature.set;
+            count = creature.count;
         }
     }
 
@@ -256,6 +263,13 @@ void ResetAICreature(GameObject_s *object, AISYS_s *system) {
     object->field_0x10c8 = object->apiobj.position.x;
     object->field_0x10cc = object->apiobj.position.y;
     object->field_0x10d0 = object->apiobj.position.z;
+    if ((object->apiobj.character_data->model_flags & 0x20000000) != 0 &&
+        object->apiobj.character_model->model_data_b[0x41] != NULL) {
+        object->context_animation_timer = 1000000000.0f;
+        object->field_0x7a5 = 0x17;
+        object->context_animation = 0x41;
+        ResetAnimPacket(&object->apiobj.anim_packet, 0x41);
+    }
 }
 
 void SnapCreaturePos(GameObject_s *object, nuvec_s *position, i32 angle, AIPATHINFO_s *path_info, i32 set_on_surface) {
@@ -289,8 +303,9 @@ void ResetAICreatures(AISYS_s *system) {
     }
     system->has_done_reset = 1;
 
-    for (i32 object_index = 0; object_index < HIGHGAMEOBJECT; ++object_index) {
-        GameObject_s &object = Obj[object_index];
+    GameObject_s *objects = Obj;
+    for (i32 object_index = 0; object_index < HIGHGAMEOBJECT; ++object_index, ++objects) {
+        GameObject_s &object = *objects;
         if ((object.apiobj.field_0x1f8 & APIOBJECT_FLAG_IN_USE) == 0 ||
             (object.apiobj.field_0x1f4 & APIOBJECT_MOTION_FLAG_AI_CONTROLLED) == 0) {
             continue;
@@ -313,8 +328,8 @@ void ResetAICreatures(AISYS_s *system) {
 
         AIPACKET *packet = reinterpret_cast<AIPACKET *>(&object.ai);
         AISCRIPTPROCESS *processor = &object.ai.script_process;
-        AIScriptProcessorInit(WORLD->ai_sys, packet, processor, &creature, creature.script_name, "", 1, NULL, NULL);
-        if (processor->state != NULL && processor->state->name != NULL && NuStrICmp(processor->state->name, "") == 0) {
+        AIScriptProcessorInit(WORLD->ai_sys, packet, processor, &creature, creature.script_name, "InActive", 1, NULL, NULL);
+        if (processor->state != NULL && processor->state->name != NULL && NuStrICmp(processor->state->name, "InActive") == 0) {
             creature.activate_type = 2;
         }
 
@@ -327,7 +342,7 @@ void ResetAICreatures(AISYS_s *system) {
         }
         if (creature.count > 1 && creature.start_stagger > 0.0f && object.ai.group_member_index != 0) {
             object.ai.reset_mode = AI_CREATURE_RESET_STAGGERED;
-            object.ai_spawn_delay = static_cast<f32>(object.ai.group_member_index) * creature.start_stagger;
+            object.ai_spawn_delay = static_cast<f32>(static_cast<u32>(object.ai.group_member_index)) * creature.start_stagger;
             continue;
         }
 
@@ -335,16 +350,71 @@ void ResetAICreatures(AISYS_s *system) {
     }
 }
 
-void CreatureCrate_Stop(PART_s *) {
+void GameCam_Judder(GAMECAMERA_s *, f32, i32, NUVEC *);
+void NewRumbleAllPlayers(f32, f32, i32, i32);
+i32 ObjHitObj_Flags(GameObject_s *);
+
+void CreatureCrate_Stop(PART_s *part) {
+    GameObject_s *object = part->owner;
+    if (object == NULL)
+        return;
+    i16 debris = FindGameDebris(WORLD->debris_sys, "CRATE_POP");
+    if (debris != -1)
+        AddGameDebris(WORLD->debris_sys, debris, &part->position);
+    i32 type = PARTLookupType("CRATE_PART");
+    if (type != -1)
+        AddFiniteShotPART(type, &part->position, 1);
+    object->ai.reset_mode = 2;
+    object->apiobj.field_0x1f8 |= 0x1000;
+    PlaySfx("Explode1", &part->position);
+    GameCam_Judder(GameCam, 0.1f, 0, NULL);
+    NewRumbleAllPlayers(0.0f, 0.0f, 2, 0);
 }
 
-void CreatureCrate_DrawFn(PART_s *) {
+i32 CreatureCrate_DrawFn(PART_s *part) {
+    return !(part->crate_spawn_delay > 0.0f);
 }
 
-void CreatureCrate_MoveFn(PART_s *, float) {
+void CreatureCrate_MoveFn(PART_s *part, f32 elapsed) {
+    part->crate_spawn_delay -= elapsed;
+    if (part->crate_spawn_delay <= 0.0f) {
+        part->move_callback = NULL;
+        part->draw_callback = NULL;
+    }
 }
 
-void SpawnCreatureFromCrate(GameObject_s *, float, float) {
+void SpawnCreatureFromCrate(GameObject_s *object, f32 height, f32 delay) {
+    NUVEC velocity = {0.0f, 0.0f, 0.0f};
+    if (!NuSpecialExistsFn(&WORLD->lev_objs[0xe6].special))
+        return;
+    NUMTX matrix;
+    NuMtxSetTranslation(&matrix, &object->apiobj.collision_position);
+    ADDPART_s parameters = Default_ADDPART;
+    parameters.flags = 0x313;
+    parameters.matrix = &matrix;
+    parameters.velocity = &velocity;
+    matrix.m31 += height;
+    parameters.special = &WORLD->lev_objs[0xe6].special;
+    parameters.owner = object;
+    parameters.field_14 = 0.1f;
+    parameters.field_18 = 0.1f;
+    parameters.gravity = -2.0f;
+    parameters.draw_fn = CreatureCrate_DrawFn;
+    parameters.move_fn = CreatureCrate_MoveFn;
+    parameters.stop_fn = CreatureCrate_Stop;
+    parameters.time_step = FRAMETIME;
+    PART_s *part = AddPart(&parameters);
+    if (part == NULL)
+        return;
+    part->force_flags = static_cast<u16>(ObjHitObj_Flags(object));
+    if (!(delay > 0.0f)) {
+        part->move_callback = NULL;
+        part->draw_callback = NULL;
+        delay = 0.0f;
+    }
+    part->crate_spawn_delay = delay;
+    object->ai.reset_mode = 3;
+    object->apiobj.field_0x1f8 &= ~0x1000;
 }
 
 void SpawnMeleeCreatureType(i32) {

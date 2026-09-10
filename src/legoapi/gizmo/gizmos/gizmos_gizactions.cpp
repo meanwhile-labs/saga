@@ -6,6 +6,7 @@
 #include "legoapi/characters/core/players.h"
 #include "legoapi/characters/core/charconfig.h"
 #include "legoapi/gizmo/base/gizactions.h"
+#include "legoapi/gizmo/base/gizmo.h"
 #include "legoapi/items/objects/gameobjects.h"
 #include "legoapi/legoapi_types.h"
 #include "legoapi/props/doors/door.h"
@@ -16,6 +17,7 @@
 #include "legoapi/gizmos/transport/grapples.h"
 #include "legoapi/gizmos/traps/gizforce.h"
 #include "legoapi/gizmos/object/lever.h"
+#include "legoapi/gizmos/object/gizpanel.h"
 #include "legoapi/gizmos/object/gizbuildits.h"
 #include "nu2api/numath/nuvec.h"
 
@@ -38,7 +40,51 @@ i32 Action_SetState(AISYS_s *, AISCRIPTPROCESS_s *processor, AIPACKET_s *, char 
     return 0;
 }
 
-void Action_UsePanel(AISYS_s *, AISCRIPTPROCESS_s *, AIPACKET_s *, char **, i32, i32, float) {
+f32 GameShadow(GameObject_s *, NUVEC *, f32, i32);
+void AISysGetPathPos2(AISYS_s *, NUVEC *, AIPATHINFO_s *, NUVEC *, AIPATH_s *, i32);
+
+i32 Action_UsePanel(AISYS_s *system, AISCRIPTPROCESS_s *processor, AIPACKET_s *packet, char **params, i32 param_count,
+                    i32 first_time, f32 elapsed) {
+    if (packet == NULL || packet->owner == NULL || packet->owner->apiobj.objptr == NULL)
+        return 1;
+    GameObject_s *object = packet->owner->apiobj.objptr;
+    if (first_time != 0) {
+        for (i32 index = 0; index < param_count; ++index) {
+            char *name = NuStrIStr(params[index], "name=");
+            if (name == NULL)
+                continue;
+            GIZMO *gizmo = GizmoFindByName(WORLD->gizmo_sys, gizpanel_gizmotype_id, name + 5);
+            if (gizmo == NULL || gizmo->object == NULL)
+                continue;
+            GIZPANEL *panel = static_cast<GIZPANEL *>(gizmo->object);
+            processor->action_data_3 = panel;
+            if ((panel->flags & 2) != 0)
+                continue;
+            processor->action_pos = panel->floor_position;
+            f32 height = GameShadow(NULL, &processor->action_pos, 5.0f, -1);
+            if (height != 2000000.0f)
+                processor->action_pos.y = height;
+            AISysGetPathPos2(system, &processor->action_pos, &processor->path_info, &processor->action_pos, NULL, 0xff);
+        }
+    }
+    GIZPANEL *panel = static_cast<GIZPANEL *>(processor->action_data_3);
+    if (panel == NULL || (panel->flags & 2) != 0)
+        return 1;
+    AIMoveInstruction(packet, &processor->action_pos, 0.0f, &processor->path_info, 1, 0.0f);
+    if (GizPanel_CanUsePanel(object, panel) != 0) {
+        f32 distance = NuVecDistSqr(&packet->terrain_origin, &processor->action_pos, NULL);
+        if (distance < ai_moveradius * ai_moveradius) {
+            packet->movement_look_target = &panel->position;
+            object->pad_gamepad->buttons_pressed |= GAMEPAD_SPECIAL;
+        }
+    } else if (FreePlay != 0) {
+        processor->action_timer -= elapsed;
+        if (processor->action_timer < 0.0f) {
+            processor->action_timer = 0.5f;
+            object->pad_gamepad->buttons_pressed |= GAMEPAD_TOGGLERIGHT;
+        }
+    }
+    return object->field_0x7a5 == 0x0b && object->field_0x788 == panel;
 }
 
 void Action_CameraCut(AISYS_s *, AISCRIPTPROCESS_s *, AIPACKET_s *, char **, i32, i32, float) {
@@ -86,7 +132,7 @@ i32 Action_FollowPlayer(AISYS_s *sys, AISCRIPTPROCESS_s *processor, AIPACKET_s *
         }
     }
 
-    if (sys != NULL && sys->player_1 != NULL && sys->player_1->ai != NULL) {
+    if (sys->player_1 != NULL && sys->player_1->ai != NULL) {
         FollowAPIObject(&packet->owner->apiobj, sys->player_1, processor->action_data_1,
                         packet->movement_instruction_parameter);
     }
@@ -653,19 +699,91 @@ static __used__ void GizAction_ActivateChar(GIZFLOW_s *flow, FLOWBOX_s *, char *
     }
 }
 
-static __used__ void GizAction_SetAIMessage(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
+static __used__ void GizAction_SetAIMessage(GIZFLOW_s *, FLOWBOX_s *, char **params, int count) {
+    f32 value = 0.0f;
+    i32 mode = 0;
+    char *name = NULL;
+    for (i32 index = 0; index < count; ++index) {
+        char *argument = NuStrIStr(params[index], "Name");
+        if (argument != NULL)
+            name = argument + NuStrLen("Name") + 1;
+        else if ((argument = NuStrIStr(params[index], "Val")) != NULL)
+            value = NuAToF(argument + NuStrLen("Val") + 1);
+        else if ((argument = NuStrIStr(params[index], "increment=")) != NULL) {
+            value = NuAToF(argument + 10);
+            mode = 1;
+        } else if ((argument = NuStrIStr(params[index], "decrement=")) != NULL) {
+            value = NuAToF(argument + 10);
+            mode = -1;
+        }
+    }
+    GIZAIMESSAGE_s *message = CheckGizAIMessage(gizaimessagesys, name, NULL);
+    switch (mode) {
+    case 0:
+        message->value = value;
+        break;
+    case 1:
+        message->value = value + message->value;
+        break;
+    case -1:
+        message->value = message->value - value;
+        break;
+    }
 }
 
 static __used__ void GizActions_PlaySpecial(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
 }
 
-static __used__ void GizAction_ActivateGizmo(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
+static __used__ void GizAction_ActivateGizmo(GIZFLOW_s *flow, FLOWBOX_s *, char **params, int count) {
+    char *name = NULL;
+    i32 type = -1;
+    i32 active = 1;
+    for (i32 index = 0; index < count; ++index) {
+        char *value = NuStrIStr(params[index], "name=");
+        if (value != NULL)
+            name = value + 5;
+        else if ((value = NuStrIStr(params[index], "type=")) != NULL)
+            type = GizmoGetTypeIDByName(flow->gizmo_sys, value + 5);
+        else if (NuStrIStr(params[index], "FALSE") != NULL)
+            active = 0;
+    }
+    if (name != NULL) {
+        GIZMO *gizmo = GizmoFindByName(flow->gizmo_sys, type, name);
+        if (gizmo != NULL)
+            GizmoActivate(flow->gizmo_sys, gizmo, active, 1);
+    }
 }
 
-static __used__ void GizAction_SetVisibility(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
+static __used__ void GizAction_SetVisibility(GIZFLOW_s *, FLOWBOX_s *, char **params, int count) {
+    nuhspecial_s special = {};
+    i32 visible = 1;
+    for (i32 index = 0; index < count; ++index) {
+        char *value = NuStrIStr(params[index], "name=");
+        if (value != NULL)
+            NuSpecialFind(WORLD->current_gscn, &special, value + 5, 1);
+        else if (NuStrIStr(params[index], "FALSE") != NULL)
+            visible = 0;
+    }
+    if (NuSpecialExistsFn(&special))
+        NuSpecialSetVisibility(&special, visible);
 }
 
-static __used__ void GizAction_TurnOnFlowBox(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
+static __used__ void GizAction_TurnOnFlowBox(GIZFLOW_s *flow, FLOWBOX_s *, char **params, int count) {
+    char *name = NULL;
+    i32 enabled = 1;
+    for (i32 index = 0; index < count; ++index) {
+        char *value = NuStrIStr(params[index], "name=");
+        if (value != NULL)
+            name = value + 5;
+        else if (NuStrICmp(params[index], "FALSE") == 0)
+            enabled = 0;
+    }
+    if (name != NULL && flow != NULL) {
+        for (i32 index = 0; index < flow->flowbox_count; ++index) {
+            if (flow->flowboxes[index].name != NULL && NuStrICmp(flow->flowboxes[index].name, name) == 0)
+                flow->flowboxes[index].state_flags_low = (flow->flowboxes[index].state_flags_low & ~1) | (enabled & 1);
+        }
+    }
 }
 
 static __used__ void GizActions_ActivateBelt(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
@@ -736,7 +854,25 @@ static __used__ void GizAction_ChangeTechnoTgt(GIZFLOW_s *, FLOWBOX_s *, char **
 static __used__ void GizAction_ActivatePartEffect(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
 }
 
-static __used__ void GizAction_SetGizmoVisibility(GIZFLOW_s *, FLOWBOX_s *, char **, int) {
+static __used__ void GizAction_SetGizmoVisibility(GIZFLOW_s *flow, FLOWBOX_s *, char **params, int count) {
+    char *name = NULL;
+    i32 type = -1;
+    i32 visible = 1;
+    for (i32 index = 0; index < count; ++index) {
+        char *value = NuStrIStr(params[index], "name=");
+        if (value != NULL) {
+            name = value + 5;
+        } else if ((value = NuStrIStr(params[index], "type=")) != NULL) {
+            type = GizmoGetTypeIDByName(flow->gizmo_sys, value + 5);
+        } else if (NuStrIStr(params[index], "FALSE") != NULL) {
+            visible = 0;
+        }
+    }
+    if (name != NULL) {
+        GIZMO *gizmo = GizmoFindByName(flow->gizmo_sys, type, name);
+        if (gizmo != NULL)
+            GizmoSetVisibility(flow->gizmo_sys, gizmo, visible, 1);
+    }
 }
 
 static __used__ void GizAction_SetPickupVisibility(GIZFLOW_s *, FLOWBOX_s *, char **, int) {

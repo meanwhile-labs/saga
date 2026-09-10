@@ -390,8 +390,8 @@ typedef struct {
     u8 field_0xb;
 } PlayerItemTypeEntry;
 
-extern PlayerItemTypeEntry *PlayerItemType __asm__("_ZL14PlayerItemType") __attribute__((visibility("hidden")));
-extern i32 PLAYERITEMTYPECOUNT __asm__("_ZL19PLAYERITEMTYPECOUNT") __attribute__((visibility("hidden")));
+static PlayerItemTypeEntry * PlayerItemType = NULL;
+static i32 PLAYERITEMTYPECOUNT = 0;
 
 extern i8 BoltType_FindIDByName(char *name, WORLDINFO *world);
 
@@ -764,7 +764,10 @@ i32 PlayersDropInOut() {
     return 0;
 }
 
-void PlayerItem_GotAmmo(PLAYERITEM_s *) {
+i32 PlayerItem_GotAmmo(PLAYERITEM_s *item) {
+    if (item != NULL && item->type != NULL && item->type[8] == 2)
+        return item->ammunition != 0;
+    return 1;
 }
 
 i32 Players_AveragePos(nuvec_s *, SOCKPOSITION_s *) {
@@ -1063,10 +1066,6 @@ void PlayerButton_OnClick_Callback_NextButton(MechTouchUIElement &, TouchHolder 
 }
 
 static __used__ i32 SelectOpponent(GameObject_s *, f32, f32, i32, i32) {
-    return 0;
-}
-
-static __used__ i32 ShootThisFrame(GameObject_s *, i32, i32) {
     return 0;
 }
 
@@ -1500,23 +1499,79 @@ void ResetPlayerMoves(GameObject_s *object) {
     DrawOffsetCode(object, 1);
 }
 
-void SetToLastSafePos(GameObject_s *) {
+void SetToLastSafePos(GameObject_s *object) {
+    NUVEC position = {object->apiobj.last_safe_position.x, object->apiobj.last_safe_position.y,
+                      object->apiobj.last_safe_position.z};
+    object->apiobj.start_position = position;
+    object->saved_position = object->apiobj.position = object->apiobj.start_position;
 }
 
-i32 AvailableToPlayer(u32, i32, i32, i32) {
+i32 AvailableToPlayer(u32 character_flags, i32 weapon_action, i32 context, i32 require_all) {
+    for (i32 index = 0; index < 8; ++index) {
+        GameObject_s *object = Player[index];
+        if (object == NULL || object->apiobj.character_data == NULL)
+            continue;
+        if (require_all != 0) {
+            if ((character_flags == 0 ||
+                 (object->apiobj.character_data->model_flags & character_flags) == character_flags) &&
+                (weapon_action == -1 ||
+                 static_cast<i8>(object->apiobj.character_data->game_character->uses_weapon_action) == weapon_action) &&
+                (context == 0 || object->field_0x108e == context))
+                return 1;
+        } else {
+            if ((character_flags != 0 &&
+                 (object->apiobj.character_data->model_flags & character_flags) == character_flags) ||
+                (weapon_action != -1 &&
+                 static_cast<i8>(object->apiobj.character_data->game_character->uses_weapon_action) == weapon_action) ||
+                context == 0 || object->field_0x108e == context)
+                return 1;
+        }
+    }
+    if (FreePlay != 0) {
+        for (i32 index = 0; index < apicharsys->character_count; ++index) {
+            i32 model = apicharsys->playermodelids[index];
+            if (model == -1 || FreePlay == 0 || (apicharsys->models[model].flags & 1) == 0)
+                continue;
+            if (!((Game_CharacterSave != NULL && (Game_CharacterSave[index] & 1) != 0) ||
+                  (static_cast<i32>(GCDataList[index].flags_090) < 0 && Cheats_CheckFlags(0x100) != 0)))
+                continue;
+            if (character_flags != 0) {
+                if ((CDataList[index].model_flags & character_flags) == character_flags) {
+                    if (require_all == 0)
+                        return 1;
+                } else if (require_all != 0) {
+                    continue;
+                }
+            }
+            if (weapon_action == -1 || static_cast<i8>(GCDataList[index].uses_weapon_action) == weapon_action)
+                return 1;
+        }
+    }
     return 0;
 }
 
 void GetNumLocalPlayers() {
 }
 
-void UnderPlayerControl(GameObject_s *) {
+i32 UnderPlayerControl(GameObject_s *object) {
+    return static_cast<i8>(object->apiobj.flags_low) < 0 ||
+           (object->field_0xcc0 != NULL && static_cast<i8>(object->field_0xcc0->apiobj.flags_low) < 0);
 }
 
 void ActivePlayerInRange(nuvec_s *, float, float *) {
 }
 
-void GetOtherActivePlayer(GameObject_s *) {
+GameObject_s *GetOtherActivePlayer(GameObject_s *object) {
+    GameObject_s *other;
+    if (Player[0] == object)
+        other = Player[1];
+    else if (Player[1] == object)
+        other = Player[0];
+    else
+        return NULL;
+    if (other != NULL && static_cast<i8>(other->apiobj.field_0x1f8) < 0)
+        return other;
+    return NULL;
 }
 
 bool FindNearestPlayerToVec(nuvec_s *position, GameObject_s **nearest_player, float &distance_squared,

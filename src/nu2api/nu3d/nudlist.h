@@ -3,7 +3,7 @@
 #include "nu2api/nucore/common.h"
 #include "nu2api/numath/numtx.h"
 #include "nu2api/numath/nuvec.h"
-#include "decomp_assert.h"
+#include "decomp.h"
 
 // Forward declarations shared with sibling headers.
 struct numtl_s;
@@ -364,7 +364,7 @@ extern "C" {
     // Debug helpers consumed by NuDisplayListCaptureSortPriority (defined as
     // stubs in supportall.cpp / nucore_plain.cpp).
     void NuHtmlHeading1(const char *fmt, ...);
-    void NuHtmlWrite(const char *text);
+    void NuHtmlWrite(const char *text, ...);
 
     extern VARIPTR rndrstream_end;
     extern VARIPTR rndrstream_free;

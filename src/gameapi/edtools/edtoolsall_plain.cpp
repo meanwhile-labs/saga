@@ -5,9 +5,18 @@
 #include "gameapi/edtools/edstubs.h"
 #include "legoapi/legoapi_types.h"
 #include "nu2api/nucore/nutime.h"
+#include "nu2api/nucore/nuthread.h"
+#include "nu2api/nucore/nustring.h"
+#include "nu2api/nu3d/nuspecial.h"
 #include "nu2api/numath/numtx.h"
+#include "nu2api/numath/nuvec.h"
+#include "nu2api/nucore/nuvideo.h"
 
 #include <string.h>
+#include <math.h>
+
+float edanimPlayerAnimDistance(i32 parameter_index);
+extern u8 object_switches[0x80];
 
 struct edbridge_s {
     i32 instance_id;
@@ -17,6 +26,8 @@ struct edbridge_s {
 };
 DECOMP_ASSERT(sizeof(edbridge_s) == 0x44, "edbridge_s size");
 
+static NUVEC *ed_loc;
+
 extern "C" {
     extern debinftype *effecttypes;
     extern debinftype **debtab;
@@ -24,6 +35,23 @@ extern "C" {
     extern i32 edpp_types_used;
     extern usize edpp_page_scene[8];
     extern i32 edpp_page_used[8];
+    extern i32 edpp_page_on[8];
+    extern PartHeader **DmaDebTypes;
+    extern i32 freeDmaDebType;
+    i32 LookupDebrisEffect(char *name);
+    i32 edbitsLookupSoundFX(char *name);
+    void edbitsSoundPlay(NUVEC *position, i32 sound);
+    void edanimSoundDestroy(i32 parameter_index, i32 sound_index);
+    void AddVariableShotDebrisEffectTimed3(i32, NUVEC *, NUVEC *, i32, f32, NUMTX *, NUMTX *);
+    extern part_type_s part_types[128];
+    extern i32 part_types_used;
+    extern i32 part_emits_used;
+    extern NUGSCN *part_scene[32];
+    extern i32 part_scene_pageid[32];
+    i32 FindPlatInst(i32);
+    void PlatInstBounce(i32, f32, f32, f32);
+    void CheckPartCount(void);
+    void KillPartsByScene(NUGSCN *);
     extern i32 DEBPAGE_GENERAL;
     extern i32 DEBPAGE_CHARACTER;
     extern i32 DEBPAGE_AREA;
@@ -32,10 +60,14 @@ extern "C" {
     i32 part_page_used[8];
     i32 edpart_instances_used;
     edanim_param_s AnimParams[64];
+    i32 edbits_anim_page;
+    i32 edanim_particle_mode;
+    i32 edanim_sound_mode;
     i32 edanim_next_param;
     i32 edanim_params_used;
     i32 edanim_page_on[8];
     i32 edanim_page_used[8];
+    NUGSCN *edanim_page_scene[8];
     i32 edanim_nearest;
     i32 edanim_nearest_param_id;
     i32 edanim_sound_type;
@@ -50,6 +82,7 @@ extern "C" {
 void FileLoadSingleEffectType(debinftype *, i32, char);
 extern "C" void NuBridgeInit(void);
 
+void edanimDetermineNearestAnim(f32);
 void edppDetermineNearest(float);
 void edppPtlDestroy(i32);
 extern "C" {
@@ -137,9 +170,140 @@ extern "C" {
     }
     void edGraInitTerrainSwapProtection(void) {
     }
-    void edanimClearPage(void) {
+    i32 edanimLoadPage(char *path, NUGSCN *scene) {
+        i32 page;
+        if (edanim_page_used[0] == 0)
+            page = 0;
+        else if (edanim_page_used[1] == 0)
+            page = 1;
+        else if (edanim_page_used[2] == 0)
+            page = 2;
+        else if (edanim_page_used[3] == 0)
+            page = 3;
+        else if (edanim_page_used[4] == 0)
+            page = 4;
+        else if (edanim_page_used[5] == 0)
+            page = 5;
+        else if (edanim_page_used[6] == 0)
+            page = 6;
+        else if (edanim_page_used[7] == 0)
+            page = 7;
+        else
+            return -1;
+        EdFileSetMedia(1);
+        if (EdFileOpen(path, NUFILE_READ) == 0)
+            return -1;
+        EdFileSetReadWrongEndianess(1);
+        i32 version = EdFileReadInt();
+        if (version > 6) {
+            EdFileSetReadWrongEndianess(0);
+            EdFileClose();
+            return -1;
+        }
+        i32 count = EdFileReadInt();
+        if (count + edanim_params_used > 64)
+            count = 64 - edanim_params_used;
+        i32 slot = 0;
+        for (i32 index = 0; index < count; ++index) {
+            while (AnimParams[slot].instance_id != -1 && slot < 64)
+                ++slot;
+            if (slot >= 64)
+                continue;
+            char name[20];
+            EdFileRead(name, 20);
+            edanim_param_s *param = &AnimParams[slot];
+            param->instance_id = edanimLookupSpecial(name, scene);
+            param->effect_count = EdFileReadInt();
+            param->sound_count = version > 1 ? EdFileReadInt() : 0;
+            param->field_00c = EdFileReadInt();
+            param->field_010 = EdFileReadInt();
+            param->field_014 = EdFileReadFloat();
+            param->field_018 = EdFileReadFloat();
+            if (param->effect_count > 8)
+                param->effect_count = 8;
+            for (i32 effect = 0; effect < param->effect_count; ++effect) {
+                EdFileRead(param->effect_names[effect], 16);
+                param->effect_ids[effect] = -1;
+                if (version > 4) {
+                    param->effect_intervals[effect] = version == 5 ? static_cast<i32>(EdFileReadFloat()) : EdFileReadInt();
+                } else {
+                    i32 interval = EdFileReadInt();
+                    param->effect_intervals[effect] = interval > 0 ? interval * 60 : interval == 0 ? 0 : -60 / interval;
+                }
+                param->effect_flags[effect] = EdFileReadInt();
+                EdFileReadNuVec(reinterpret_cast<NUVEC *>(param->effect_positions[effect]));
+                if (version > 2) {
+                    param->effect_angles[effect] = EdFileReadShort();
+                    param->effect_angle_ranges[effect] = EdFileReadShort();
+                } else {
+                    param->effect_angles[effect] = 0;
+                    param->effect_angle_ranges[effect] = 0;
+                }
+            }
+            param->field_17c = 0.99f;
+            if (version > 1) {
+                if (param->sound_count > 8)
+                    param->sound_count = 8;
+                for (i32 sound = 0; sound < param->sound_count; ++sound) {
+                    EdFileRead(param->sound_names[sound], 16);
+                    param->sound_ids[sound] = -1;
+                    param->sound_flags[sound] = EdFileReadInt();
+                    param->sound_values[sound] = EdFileReadFloat();
+                    EdFileReadNuVec(reinterpret_cast<NUVEC *>(param->sound_positions[sound]));
+                }
+            }
+            nuhspecial_s special;
+            NuGScnGetSpecial(&special, scene, param->instance_id);
+            param->platform_id = FindPlatInst(NuSpecialGetInstanceix(&special));
+            if (version > 3) {
+                param->bounce_impulse = EdFileReadFloat();
+                param->bounce_spring = EdFileReadFloat();
+                param->bounce_damping = EdFileReadFloat();
+            } else {
+                param->bounce_impulse = 0.0f;
+                param->bounce_spring = 0.0f;
+                param->bounce_damping = 0.0f;
+            }
+            if (param->platform_id != -1)
+                PlatInstBounce(param->platform_id, param->bounce_impulse, param->bounce_spring, param->bounce_damping);
+            param->page = static_cast<i8>(page);
+            ++edanim_params_used;
+        }
+        EdFileSetReadWrongEndianess(0);
+        EdFileClose();
+        edanim_page_used[page] = 1;
+        edanim_page_scene[page] = scene;
+        edbits_anim_page = page;
+        edanim_next_param = count;
+        edanim_particle_mode = 0;
+        edanim_nearest = -1;
+        edanim_nearest_param_id = -1;
+        edanimDetermineNearestAnim(1.0f);
+        return page;
     }
-    void edanimLookupSpecial(void) {
+
+    void edanimClearPage(i32 page) {
+        if (edanim_page_on[page] != 0)
+            edanimStopPage(page);
+        for (i32 index = 0; index < 64; ++index) {
+            if (AnimParams[index].page == page) {
+                AnimParams[index].instance_id = -1;
+                --edanim_params_used;
+            }
+        }
+        edanim_page_used[page] = 0;
+        edanim_page_scene[page] = NULL;
+    }
+    i32 edanimLookupSpecial(char *name, NUGSCN *scene) {
+        if (scene != NULL) {
+            nuhspecial_s special;
+            for (i32 index = 0; index < NuGScnNumSpecials(scene); ++index) {
+                NuGScnGetSpecial(&special, scene, index);
+                if (NuStrNICmp(NuSpecialGetName(&special), name, 19) == 0)
+                    return index;
+            }
+        }
+        return -1;
     }
     void edanimParamReset(void) {
         for (i32 i = 0; i < 64; ++i) {
@@ -150,15 +314,165 @@ extern "C" {
         memset(edanim_page_used, 0, sizeof(edanim_page_used));
         memset(edanim_page_on, 0, sizeof(edanim_page_on));
     }
-    void edanimParticleDestroy(void) {
+    void edanimParticleDestroy(i32 parameter_index, i32 particle_index) {
+        edanim_param_s *parameters = AnimParams;
+        for (i32 index = particle_index; index < parameters[parameter_index].effect_count - 1; ++index) {
+            parameters[parameter_index].effect_ids[index] = parameters[parameter_index].effect_ids[index + 1];
+            parameters[parameter_index].effect_intervals[index] = parameters[parameter_index].effect_intervals[index + 1];
+            parameters[parameter_index].effect_flags[index] = parameters[parameter_index].effect_flags[index + 1];
+            memcpy(parameters[parameter_index].effect_positions[index],
+                   parameters[parameter_index].effect_positions[index + 1], sizeof(NUVEC));
+            strcpy(parameters[parameter_index].effect_names[index], parameters[parameter_index].effect_names[index + 1]);
+        }
+        --parameters[parameter_index].effect_count;
     }
     void edanimRegisterCubeDumpInfo(void) {
     }
-    void edanimStartPage(i32) {
+    void edanimStartPage(i32 page) {
+        if (edanim_page_used[page] != 0 && edanim_page_scene[page] != NULL && edanim_page_on[page] == 0)
+            edanim_page_on[page] = 1;
     }
-    void edanimStopPage(i32) {
+    void edanimStopPage(i32 page) {
+        edanim_page_on[page] = 0;
     }
-    void edanimUpdateObjects(float) {
+    void edanimUpdateObjects(float elapsed) {
+        static i32 localframecount;
+        float seconds;
+        if (NuVideoGetMode() == 3)
+            seconds = elapsed / 50.0f;
+        else
+            seconds = elapsed / 60.0f;
+        for (i32 index = 0; index < 64; ++index) {
+            edanim_param_s *param = &AnimParams[index];
+            if (param->instance_id == -1 || edanim_page_on[param->page] == 0)
+                continue;
+            nuhspecial_s special;
+            nuinstanim_s *animation = NULL;
+            if (edanim_page_scene[param->page] != NULL) {
+                NuGScnGetSpecial(&special, edanim_page_scene[param->page], param->instance_id);
+                animation = NuSpecialGetInstAnim(&special);
+                NuSpecialGetInstanceix(&special);
+            }
+            if (animation != NULL) {
+                switch (param->field_00c) {
+                    case 1:
+                        animation->playing = 0;
+                        if (param->field_010 != -1 && object_switches[param->field_010] != 0)
+                            animation->playing = 1;
+                        break;
+                    case 2:
+                        animation->repeating = 0;
+                        if (param->field_010 != -1 && object_switches[param->field_010] != 0 && !animation->playing) {
+                            animation->ltime = 1.0f;
+                            animation->playing = 1;
+                            animation->backwards = 0;
+                            animation->waiting = 0;
+                        }
+                        break;
+                    case 3:
+                        animation->repeating = 1;
+                        if (param->field_010 != -1 && object_switches[param->field_010] != 0)
+                            animation->playing = 1;
+                        break;
+                    case 4:
+                        animation->playing = param->field_014 > edanimPlayerAnimDistance(index);
+                        break;
+                    case 5:
+                        animation->repeating = 0;
+                        if (param->field_014 > edanimPlayerAnimDistance(index) && !animation->playing) {
+                            animation->playing = 1;
+                            animation->backwards = 0;
+                            animation->waiting = 0;
+                            animation->ltime = 1.0f;
+                        }
+                        break;
+                    case 6:
+                        animation->repeating = 1;
+                        if (param->field_014 > edanimPlayerAnimDistance(index))
+                            animation->playing = 1;
+                        break;
+                    case 10:
+                        animation->ltime = 1.0f;
+                        animation->playing = 0;
+                        break;
+                    case 11:
+                        animation->playing = 1;
+                        break;
+                    case 12:
+                        animation->playing = 1;
+                        animation->repeating = 1;
+                        break;
+                }
+                if (index == edanim_nearest_param_id && (edanim_particle_mode != 0 || edanim_sound_mode != 0))
+                    animation->ltime = 1.0f;
+            }
+            if (NuSpecialGetVisibilityFn(&special) != NULL) {
+                i32 particle_index = 0;
+                while (particle_index < param->effect_count) {
+                    i32 effect = param->effect_ids[particle_index];
+                    if (effect != -1 && debtab[effect] != NULL) {
+                        if (param->effect_flags[particle_index] == 0 || (animation != NULL && animation->playing)) {
+                            NUMTX matrix;
+                            NuMtxInvRSS(&matrix, NuSpecialGetMtx(&special));
+                            NuMtxMul(&matrix, &matrix, NuSpecialGetDrawMtx(&special));
+                            NUVEC position = *reinterpret_cast<NUVEC *>(param->effect_positions[particle_index]);
+                            NuVecMtxTransform(&position, &position, &matrix);
+                            NUMTX orientation = numtx_identity;
+                            NuMtxRotateZ(&orientation, param->effect_angles[particle_index]);
+                            NuMtxRotateY(&orientation, param->effect_angle_ranges[particle_index]);
+                            NuMtxMul(&matrix, &orientation, &matrix);
+                            AddVariableShotDebrisEffectTimed3(param->effect_ids[particle_index], &position, &nuvec_zero,
+                                                             param->effect_intervals[particle_index], seconds, &matrix,
+                                                             &numtx_identity);
+                        }
+                    } else if (param->effect_names[particle_index][0] != 0) {
+                        param->effect_ids[particle_index] = LookupDebrisEffect(param->effect_names[particle_index]);
+                        if (param->effect_ids[particle_index] == -1) {
+                            edanimParticleDestroy(index, particle_index);
+                            continue;
+                        }
+                    }
+                    ++particle_index;
+                }
+                for (i32 sound_index = 0; sound_index < param->sound_count; ++sound_index) {
+                    i32 sound = param->sound_ids[sound_index];
+                    if (sound == -1) {
+                        if (param->sound_names[sound_index][0] != 0) {
+                            param->sound_ids[sound_index] = edbitsLookupSoundFX(param->sound_names[sound_index]);
+                            if (param->sound_ids[sound_index] == -1) {
+                                edanimSoundDestroy(index, sound_index);
+                                --sound_index;
+                            }
+                        }
+                        continue;
+                    }
+                    i32 play = -1;
+                    if (param->sound_flags[sound_index] == 1) {
+                        i32 interval = static_cast<i32>(param->sound_values[sound_index]);
+                        if (static_cast<i32>(static_cast<float>(localframecount) + elapsed) / interval > localframecount / interval)
+                            play = sound;
+                    } else if (animation != NULL) {
+                        float frame = param->sound_values[sound_index];
+                        if (animation->ltime >= frame && frame > param->field_17c)
+                            play = sound;
+                        if (animation->oscillate && frame >= animation->ltime && fabsf(param->field_17c) > frame)
+                            play = sound;
+                    }
+                    if (play != -1) {
+                        NUMTX matrix;
+                        NuMtxInvRSS(&matrix, NuSpecialGetMtx(&special));
+                        NuMtxMul(&matrix, &matrix, NuSpecialGetDrawMtx(&special));
+                        // The original uses the completed particle-loop index here (0x35d332).
+                        NUVEC position = *reinterpret_cast<NUVEC *>(param->sound_positions[particle_index]);
+                        NuVecMtxTransform(&position, &position, &matrix);
+                        edbitsSoundPlay(&position, play);
+                    }
+                }
+            }
+            if (animation != NULL)
+                param->field_17c = animation->oscillate ? -animation->ltime : animation->ltime;
+        }
+        localframecount += static_cast<i32>(elapsed);
     }
     void edbitsDrawBBox(void) {
     }
@@ -188,7 +502,8 @@ extern "C" {
     }
     void edbitsLookupSound(void) {
     }
-    void edbitsLookupSoundFX(void) {
+    i32 edbitsLookupSoundFX(char *) {
+        return -1;
     }
     void edbitsProcessCubemapDump(void) {
     }
@@ -233,7 +548,7 @@ extern "C" {
         memset(edbri_page_on, 0, sizeof(edbri_page_on));
         edbri_bridges_used = 0;
     }
-    void edbriClearPage(void) {
+    void edbriClearPage(i8) {
     }
     void edbriStartAllPages(void) {
     }
@@ -357,7 +672,7 @@ extern "C" {
     }
     void edgraBufferUsage(void) {
     }
-    void edgraClearPage(void) {
+    void edgraClearPage(i8) {
     }
     void edgraClumpsReset(void) {
     }
@@ -392,11 +707,13 @@ extern "C" {
     }
     void edmainProcess(void) {
     }
-    void edmainQueryLocVec(void) {
+    NUVEC *edmainQueryLocVec(void) {
+        return ed_loc;
     }
     void edmainRegister(void) {
     }
-    void edmainRegisterLocVec(void) {
+    void edmainRegisterLocVec(NUVEC *position) {
+        ed_loc = position;
     }
     void edmainRender(void) {
     }
@@ -410,7 +727,34 @@ extern "C" {
     }
     void edmainSetReturn(void) {
     }
-    void edpartClearPage(void) {
+    void edpartClearPage(i8 page) {
+        NuThreadDisableThreadSwap();
+        CheckPartCount();
+        if (part_page_on[page] != 0)
+            edpartStopPage(page);
+        for (i32 index = 0; index < 128; ++index) {
+            if (part_types[index].page == page && part_types[index].name[0] != 0) {
+                part_types[index].name[0] = 0;
+                part_types[index].effect_ids[0] = -1;
+                --part_types_used;
+            }
+        }
+        for (i32 index = 0; index < 40; ++index) {
+            if (part_emits[index].page == page && part_emits[index].effect_id != -1) {
+                part_emits[index].effect_id = -1;
+                --part_emits_used;
+            }
+        }
+        CheckPartCount();
+        for (i32 index = 0; index < 32; ++index) {
+            if (part_scene_pageid[index] == page) {
+                KillPartsByScene(part_scene[index]);
+                part_scene_pageid[index] = -1;
+                part_scene[index] = NULL;
+            }
+        }
+        NuThreadEnableThreadSwap();
+        part_page_used[page] = 0;
     }
     void edpartDestroyAllParticles(void) {
     }
@@ -424,9 +768,34 @@ extern "C" {
         memset(part_page_on, 0, sizeof(part_page_on));
         edpart_instances_used = 0;
     }
-    void edpartRegisterPointerToGameCharLocation(void) {
+    void edpartRegisterPointerToGameCharLocation(NUVEC *position) {
+        edmainRegisterLocVec(position);
     }
-    void edppClearPage(void) {
+    void edppClearPage(i8 page) {
+        edpp_page_on[page] = 0;
+        edpp_page_used[page] = 0;
+        for (i32 index = 0; index < 512; ++index) {
+            if (edpp_ptls[index].page == page)
+                edppPtlDestroy(index);
+        }
+        for (i32 index = 1; index < EDPP_MAX_TYPES; ++index) {
+            if (debtab[index] == NULL || debtab[index]->page != static_cast<u8>(page))
+                continue;
+            debtab[index]->disabled = 1;
+            for (i32 key = 0; key < maxdebkeys; ++key) {
+                if (debkeydata[key].effect_index == index) {
+                    i32 handle = key;
+                    DebFreeInstantly(&handle);
+                }
+            }
+            DebFreeOrphansInstantly(debtab[index]);
+            if (debtab[index]->native_data != NULL) {
+                DmaDebTypes[--freeDmaDebType] = debtab[index]->native_data;
+                debtab[index]->native_data = NULL;
+            }
+            debtab[index] = NULL;
+            --edpp_types_used;
+        }
     }
     void edppDeleteEffect(i32 index) {
         if (edpp_ptls[edpp_nearest].effect_index == index)
@@ -544,7 +913,8 @@ extern "C" {
         }
         return page_index;
     }
-    void edppRegisterPointerToGameCharLocation(void) {
+    void edppRegisterPointerToGameCharLocation(NUVEC *position) {
+        edmainRegisterLocVec(position);
     }
     void edppRestartAllEffectsInLevel(void) {
     }

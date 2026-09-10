@@ -4,6 +4,15 @@
 #include <stdio.h>
 #include <string.h>
 
+void NuStrCatC(char *text, char character) {
+    while (*text != '\0')
+        text++;
+    if (character != '\0') {
+        *text = character;
+        text[1] = '\0';
+    }
+}
+
 void NuStrFormatAddress(char *buf, u32 buf_len, void *ptr) {
     char address[21];
 
@@ -75,16 +84,4 @@ const char *NuStrStripPath(const char *string) {
     } while (*string != '\0');
 
     return string;
-}
-
-static __used__ i32 NuStringIsFluff(u16) {
-    return 0;
-}
-
-static __used__ i32 NuStringCharEquiv(u16, u16) {
-    return 0;
-}
-
-static __used__ u16 *NuStringBadSubString(const u16 *, const u16 *, i32 *, i32) {
-    return 0;
 }
