@@ -78,10 +78,8 @@ extern "C" {
 
 // Swap/present pacing flags (original BSS).
 volatile bool g_isBlockedInSwapScreen = false;
-i32 rndr_blend_shape_deformer_wt_cnt = 0x3f00;
-i32 rndr_blend_shape_deformer_wt_ptrs_cnt = 0x800;
-static f32 rndr_blend_shape_deformer_wts[0x84000];
-static f32 *rndr_blend_shape_deformer_wt_ptrs[0x800];
+extern i32 rndr_blend_shape_deformer_wt_cnt;
+extern i32 rndr_blend_shape_deformer_wt_ptrs_cnt;
 
 // ---------------------------------------------------------------------------
 // Immediate-mode 2D stream state
@@ -412,7 +410,13 @@ extern "C" void NuGScnFixupTIDsPS(NUGSCN *scene) {
         }
     }
 }
-extern "C" void NuGScnFromVideoMem(void) {
+using NUGSCNVIDEOMEMFN = void (*)(NUGSCN *);
+
+NUGSCNVIDEOMEMFN gscene_to_video_mem;
+NUGSCNVIDEOMEMFN video_mem_to_gscene;
+
+extern "C" void NuGScnFromVideoMem(NUGSCNVIDEOMEMFN callback) {
+    video_mem_to_gscene = callback;
 }
 extern "C" void NuGScnReadForMultiRender(void) {
 }
@@ -426,7 +430,8 @@ extern "C" void NuGScnRndr(NUGSCN *scene) {
     }
     ++scene->rendered_additional_scene_count;
 }
-extern "C" void NuGScnToVideoMem(void) {
+extern "C" void NuGScnToVideoMem(NUGSCNVIDEOMEMFN callback) {
+    gscene_to_video_mem = callback;
 }
 
 // Material
@@ -458,8 +463,6 @@ extern "C" void NuMtlFindVariantMtl(void) {
 }
 extern "C" void NuMtlFindVariantMtlFromDesc(void) {
 }
-extern "C" void NuMtlReadEventSetHandler(void) {
-}
 extern "C" void NuMtlRegisterForOverride(void) {
 }
 extern "C" void NuMtlSetRenderPlane(void) {
@@ -471,10 +474,6 @@ extern "C" void NuMtlSpecialSetUV(void) {
 
 // Debug / visualisation geometry
 extern "C" void NuRndr3dLine(void) {
-}
-extern "C" void NuRndrAddFootPrint(void) {
-}
-extern "C" void NuRndrAddShadowPrims(void) {
 }
 extern "C" void NuRndrAnglesZX(NUVEC *direction, NUVEC *angles) {
     NUVEC rotated;
@@ -510,41 +509,13 @@ extern "C" void NuRndrAxisBright(void) {
 }
 extern "C" void NuRndrBoundingBox(void) {
 }
-extern "C" void NuRndrBurstObjAdd(void) {
-}
-extern "C" void NuRndrBurstObjAddNoClip(void) {
-}
-extern "C" void NuRndrBurstObjEnd(void) {
-}
 extern "C" void NuRndrCircle(void) {
-}
-extern "C" f32 *NuRndrCreateBlendShapeDeformerWeightsArray(i32 count) {
-    i32 size = (count + 0x20) * sizeof(f32);
-    rndr_blend_shape_deformer_wt_cnt -= size;
-    if (rndr_blend_shape_deformer_wt_cnt < 0) {
-        return NULL;
-    }
-    f32 *weights = rndr_blend_shape_deformer_wts + rndr_blend_shape_deformer_wt_cnt * 0x21;
-    memset(weights, 0, size);
-    return weights;
-}
-
-f32 **NuRndrCreateBlendShapeDWAPointers(i32 count) {
-    rndr_blend_shape_deformer_wt_ptrs_cnt -= count;
-    if (rndr_blend_shape_deformer_wt_cnt < 0) {
-        return NULL;
-    }
-    return rndr_blend_shape_deformer_wt_ptrs + rndr_blend_shape_deformer_wt_ptrs_cnt;
-}
-extern "C" void NuRndrDither(void) {
 }
 extern "C" void NuRndrEndReflectionRender(void) {
     NuSpecialReflection(0);
 }
 extern "C" void NuRndrEndShadowReceiveRender(void) {
     global_GobjIsShadowReceive = 0;
-}
-extern "C" void NuRndrFootPrints(void) {
 }
 extern "C" void NuRndrFx(i32 paused, void *) {
     if (NuRndrBeginSceneEx(-1, -2, 0) != 0) {
@@ -944,8 +915,6 @@ extern "C" void NuRndrParticleGroup(uv1debdata *chunks, PartHeader *header, NUMT
     }
 }
 
-extern "C" void NuRndrPspDraw(void) {
-}
 extern "C" void NuRndrRect(f32 x, f32 y, f32 z, f32 width, f32 height, f32 u0, f32 v0, f32 u1, f32 v1, i32 colour,
                            NUMTL *material) {
     NuPrim2DBegin(4, 7, material);
@@ -1146,9 +1115,6 @@ extern "C" i32 NuRndrSetDirectionalLightsPS(const NUVEC *dir0, const NUCOLOUR3 *
     render_state.state.lights_id++;
     return 1;
 }
-extern "C" i32 NuRndrSetFxMtx(NUMTX *) {
-    return 1;
-}
 extern "C" {
     i32 g_minmiplevel = 13;
     f32 g_mipmapbias;
@@ -1191,10 +1157,6 @@ extern "C" void NuRndrSetWind(f32 speed, f32 scale) {
     global_windscale = scale;
 }
 extern "C" void NuRndrShadPolys(void *) {
-}
-extern "C" void NuRndrShadowDirCol(const NUVEC *, u32, f32, f32) {
-}
-extern "C" void NuRndrShadowInit(u8 *) {
 }
 static inline void NuRndrPrimPosition(f32 x, f32 y, f32 z) {
     PrimVertexRaw *vertex = (PrimVertexRaw *)g_NuPrim_StreamBufferPtr->void_ptr;
@@ -1449,8 +1411,6 @@ extern "C" i32 NuRndrStrip3d(NURND_VERTEX3D *vertices, numtl_s *material, NUMTX 
     NuPrim3DEnd();
     return 1;
 }
-extern "C" void NuRndrTrailEx(void) {
-}
 extern "C" void NuRndrTri3dClip(void) {
 }
 extern "C" void NuRndrTriStrip2di(i32 *positions, f32 *uvs, i32 count, i32 colour, NUMTL *material) {
@@ -1530,8 +1490,6 @@ extern "C" nu2api::ShaderUniformRecord *NuShaderUniformGetByString(const char *n
             return &g_shaderUniforms[i];
     }
     return NULL;
-}
-extern "C" void NuTexCreateEx(void) {
 }
 extern "C" void NuTexDestroy(i32) {
 }

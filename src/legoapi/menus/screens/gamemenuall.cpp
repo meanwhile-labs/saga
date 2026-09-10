@@ -22,6 +22,7 @@
 #include "nu2api/nu3d/nugscn.h"
 #include "nu2api/nu3d/nuqfnt.h"
 #include "nu2api/nu3d/nutex.h"
+#include "nu2api/nufile/nufile.h"
 #include "nu2api/nucore/nustring.h"
 #include "nu2api/numath/nutrig.h"
 
@@ -245,9 +246,11 @@ void MenuDrawSave(MENU_s *menu) {
 }
 
 void MenuExitLoad(MENU_s *) {
+    Menu_InLoadFlow = 0;
 }
 
 void MenuExitSave(MENU_s *) {
+    Menu_InSaveFlow = 0;
 }
 
 void MenuDrawClips(MENU_s *) {
@@ -1124,6 +1127,7 @@ void MenuEnterInsertCard(MENU_s *) {
 }
 
 void MenuExitCardWarning(MENU_s *) {
+    Menu_InWarningFlow = 0;
 }
 
 void MenuUpdateBonusMode(MENU_s *) {
@@ -1200,65 +1204,6 @@ void MenuUpdateSaveCancel(MENU_s *menu) {
         BackupMenu();
         MenuSFX = MENUSFX_MENUSELECT;
     }
-}
-
-void MenuUpdateSelectMode(MENU_s *menu) {
-    static f32 selectmodeduration = 0.0f;
-
-    if (selectmodemode == 2 || selectmodemode == 3) {
-        selectmodetime += FRAMETIME;
-        if (selectmodetime < selectmodeduration) {
-            return;
-        }
-
-        if (selectmodemode == 3) {
-            WipeBackToHub();
-            return;
-        }
-
-        if (NewLData != NULL) {
-            return;
-        }
-        NextArea_FreePlay = 0;
-        FreePlay = 0;
-        NewLData = &LDataList[hub_new_level];
-        loadareacharacters_no_backdrop_reset = 1;
-        const FADETYPE fade = {FADE_TYPE_STILL};
-        FadeSys.SetFade(fade, 0);
-        FinishLoop_On = 0;
-        return;
-    }
-
-    if (menu->cancel_pressed != 0) {
-        MenuSFX = GameAudio_GetSfxId(0x31);
-        selectmodetime = 0.0f;
-        selectmodemode = 3;
-        selectmodeduration = 0.6f;
-        return;
-    }
-    if (menu->confirm_pressed == 0) {
-        hub_selectmode = menu->selected_item;
-        return;
-    }
-
-    const i32 area = LDataList[hub_new_level].area_index;
-    hub_selectmode = menu->selected_item;
-    if (hub_selectmode == 0) {
-        MenuSFX = GameAudio_GetSfxId(0x30);
-        selectmodetime = 0.0f;
-        selectmodemode = 2;
-        selectmodeduration = 0.6f;
-        return;
-    }
-    if (hub_selectmode == 1 && MenuAreaAllowsFreePlay(area)) {
-        MenuSFX = GameAudio_GetSfxId(0x30);
-        hub_freeplaysource = 0;
-        Hub_InitFreePlaySelect(area, -1, -1);
-        NewMenu(17, -1, -1);
-        return;
-    }
-
-    MenuSFX = GameAudio_GetSfxId(0x32);
 }
 
 void MenuDrawDeleteConfirm(MENU_s *) {
@@ -1672,7 +1617,7 @@ extern "C" {
         if (menu->item_offsets != NULL) {
             Text3DEx2(text, menu->draw_x + menu->item_offsets[0] * menu->item_offset_scale,
                       menu->draw_y + menu->item_offsets[1] * menu->item_offset_scale, menu->draw_z, scale * dme_sx,
-                      scale, scale, static_cast<u8>(dme_align), 0, 0, 0, static_cast<u8>(draw_alpha) >> 2);
+                      scale, scale, dme_align, 0, 0, 0, static_cast<u8>(draw_alpha) >> 2);
         }
 
         if (menu->draw_item >= menu->first_row && menu->draw_item <= menu->last_row) {
@@ -1715,8 +1660,8 @@ extern "C" {
             }
 
             if (menu->item_offsets != NULL) {
-                Text3DEx(text, menu->draw_x, menu->draw_y, menu->draw_z, scale * dme_sx, scale, scale,
-                         static_cast<u8>(dme_align), red, green, blue, draw_alpha);
+                Text3DEx(text, menu->draw_x, menu->draw_y, menu->draw_z, scale * dme_sx, scale, scale, dme_align, red,
+                         green, blue, draw_alpha);
             } else {
                 smarttextex_drawmessagebox = 1;
                 MenuSmartTextEx(text, menu->draw_x, menu->draw_y, menu->draw_z, scale * dme_sx, scale, scale,
@@ -2146,10 +2091,12 @@ extern "C" {
     void cbCancelSubMenuFromItem(void) {
     }
 
-    void cbCompateDirentByDateAsc(void) {
+    i32 cbCompateDirentByDateAsc(NUFILE_INFO *first, NUFILE_INFO *second) {
+        return first->year - second->year;
     }
 
-    void cbCompateDirentByDateDec(void) {
+    i32 cbCompateDirentByDateDec(NUFILE_INFO *first, NUFILE_INFO *second) {
+        return second->year - first->year;
     }
 
     void cbCompateDirentByNameAsc(void) {

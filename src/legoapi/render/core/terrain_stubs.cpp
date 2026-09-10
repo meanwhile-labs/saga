@@ -1293,7 +1293,8 @@ extern "C" {
     void DebrisSetRoomID(void) {
     }
 
-    void DebrisSetSeed(i32) {
+    void DebrisSetSeed(i32 seed) {
+        debrisseed = static_cast<u32>(seed);
     }
 
     void DebrisSetTrigger(i32 handle, i32 first, i32 second, i32 third) {
@@ -1735,13 +1736,7 @@ extern "C" {
     void NewRayCastSetMask(void) {
     }
 
-    void NewRaySetDisablePalt(void) {
-    }
-
     void NewScanHandel(void) {
-    }
-
-    void NewScanInit(void) {
     }
 
     f32 NewShadowEx(NUVEC *position, i32 handle, f32 height_above, f32 height_below, i32 terrain_mask);

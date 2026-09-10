@@ -14,6 +14,13 @@ extern "C" void NuRenderContextInit(void);
 extern "C" void NuInitDebrisRenderer(VARIPTR *buffer, VARIPTR buffer_end);
 extern "C" void NuIOSMtlInit(void);
 
+extern "C" NUPADREC *PadRecPtr(void) {
+    return NULL;
+}
+
+void NuXboxLiveInit(void) {
+}
+
 void InitializeGLMutex(void) {
 }
 

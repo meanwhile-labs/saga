@@ -95,6 +95,11 @@ void NeedScreenGrab(i32 needed) {
     ScreenGrabNeeded = needed != 0;
 }
 
+void ClearStill() {
+    old_pause_state = 0;
+    Paused = 0;
+}
+
 extern f32 CameraZoom;
 extern "C" f32 NuIOS_GetAspectRatio(void);
 
@@ -159,9 +164,6 @@ i8 IsGrabbingScreen() {
 }
 
 void LoadShaderSource(char **, i32 *, u32, bool) {
-}
-
-void ScreenDumpAviEnd() {
 }
 
 void UpdateCutBorders() {
@@ -234,12 +236,6 @@ void HandleStillRender() {
 }
 
 void PreRenderFlashHack() {
-}
-
-void ScreenDumpAviBegin(i32, char *, i32, i32, i32, i32, float, float, i32) {
-}
-
-void ScreenDumpAviFrame() {
 }
 
 void UCStretchToCorners(i16 *, i16 *) {

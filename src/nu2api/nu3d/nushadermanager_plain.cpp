@@ -31,6 +31,8 @@ using nu2api::HashRedirect;
 using nu2api::LoadedUniqueShaderRecord;
 using nu2api::ShaderMtlDescFilterPlain;
 
+void *g_shaderManager = nullptr;
+
 #include <GLES2/gl2.h>
 #include <cstdio>
 #include <cstring>
@@ -220,8 +222,6 @@ namespace nu2api {
     inline NUSHADEROBJECT *&ManagerBoundSlot() {
         return Manager()->bound_slot;
     }
-
-    void *g_shaderManager = nullptr;
 
     // ---------------------------------------------------------------------------
     // Uniform table
@@ -656,28 +656,40 @@ extern "C" void NuShaderManagerInit(VARIPTR *arena, VARIPTR arena_end) {
     allocator.setExternalMemoryPool(arena->void_ptr, static_cast<u32>(arena_end.addr - arena->addr));
     void *memory = allocator.cursor;
     allocator.cursor += sizeof(ShaderManagerOpenGL);
-    nu2api::g_shaderManager = new (memory) ShaderManagerOpenGL(allocator);
+    g_shaderManager = new (memory) ShaderManagerOpenGL(allocator);
     arena->addr += allocator.cursor - allocator.base;
 }
 
 extern "C" NUSHADEROBJECT *NuShaderManagerGetShaderById(i32 id) {
-    if (static_cast<u32>(id) >= nu2api::kSlotCount) {
+    ShaderManagerOpenGL *manager = static_cast<ShaderManagerOpenGL *>(g_shaderManager);
+    if (static_cast<u32>(id) > nu2api::kSlotCount) {
         return NULL;
     }
-    return nu2api::SlotPtr(id);
+    return &manager->slots[id];
 }
 
 // original 0x318d10 — the manager stores the address of the bound object,
 // rather than its numeric shader id.
 extern "C" NUSHADEROBJECT *NuShaderManagerGetCurrentShader(void) {
-    return nu2api::ManagerBoundSlot();
+    return static_cast<ShaderManagerOpenGL *>(g_shaderManager)->bound_slot;
 }
 
 extern "C" void NuShaderManagerReleaseShader(NUSHADEROBJECT *slot) {
-    if (slot == NULL) {
-        return;
+    slot->glsl.base.field1--;
+}
+
+extern "C" void NuShaderManagerSetCurrentShader(NUSHADEROBJECT *slot) {
+    static_cast<ShaderManagerOpenGL *>(g_shaderManager)->bound_slot = slot;
+}
+
+extern "C" void NuShaderManagerDestroyShaders(void) {
+    ShaderManagerOpenGL *manager = static_cast<ShaderManagerOpenGL *>(g_shaderManager);
+    for (i32 i = 0; i < nu2api::kSlotCount; ++i) {
+        NUSHADEROBJECT *slot = &manager->slots[i];
+        if (slot->glsl.base.field1 >= 0) {
+            NuShaderObjectUnInit(slot);
+        }
     }
-    nu2api::SlotRefCount(slot)--;
 }
 
 extern u32 g_boundShader;
@@ -687,7 +699,7 @@ extern "C" {
 }
 
 extern "C" void NuShaderManagerBindShader(NUSHADEROBJECT *slot) {
-    (void)nu2api::g_shaderManager;
+    (void)g_shaderManager;
     nu2api::ManagerBoundSlot() = slot;
     if (slot == NULL) {
         return;
@@ -1065,11 +1077,11 @@ namespace nu2api {
 // ---------------------------------------------------------------------------
 
 extern "C" void *NuShaderManagerRetrieveShader(NUSHADERMTLDESC *desc, void *mtl) {
-    return nu2api::RetrieveShader(nu2api::g_shaderManager, desc, mtl, 0, 0, false);
+    return nu2api::RetrieveShader(g_shaderManager, desc, mtl, 0, 0, false);
 }
 
 extern "C" void *NuShaderManagerRetrieveShaderVariant(NUSHADERMTLDESC *desc, void *mtl, i32 variant) {
-    return nu2api::RetrieveShader(nu2api::g_shaderManager, desc, mtl, variant, 0, false);
+    return nu2api::RetrieveShader(g_shaderManager, desc, mtl, variant, 0, false);
 }
 
 // GL uniform dispatch table — matches the original .data at 0x65e0b8.

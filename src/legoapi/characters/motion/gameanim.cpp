@@ -46,7 +46,7 @@ float CalcValue1648(char *, i32, i32, float, ani3_scalemin_s *);
 void CalcValue1648Get2Values(char *, i32, i32, ani3_scalemin_s *, float *, float *);
 extern "C" void VuQuatSlerpFast(NUQUAT *out, NUQUAT *from, NUQUAT *to, f32 t);
 void EvalAnim(nuhspecial_s *special, f32 frame, numtx_s *matrix, i32 include_instance_translation);
-bool UseFallAnim(GameObject_s *object);
+i32 UseFallAnim(GameObject_s *object);
 i32 GetDefaultIdle(GameObject_s *object);
 i32 SetProtocolDroidFallAnim(GameObject_s *object);
 // TODO: Restore target-local linkage once the four remaining animation-mode
@@ -2696,20 +2696,6 @@ extern "C" {
     void AddAnimEffects(void) {
     }
 
-    i32 AnimBlendingFromTo(CHARACTERMODEL_s *model, ANIMPACKET_s *packet, i32 source_animation, i32 target_animation) {
-        if (packet->blending == 0 || source_animation == -1 || packet->blend_animation_a != source_animation ||
-            target_animation == -1 || packet->blend_animation_b != target_animation) {
-            return 0;
-        }
-        if (model == NULL) {
-            return 1;
-        }
-        if (!HasAnimation(model, source_animation) || !HasAnimation(model, target_animation)) {
-            return 0;
-        }
-        return 1;
-    }
-
     f32 animduration_blendouttime;
 
     f32 AnimDuration(i32 character_id, i32 animation, f32 start_frame, f32 end_frame, i32 subtract_frame_time) {
@@ -2778,10 +2764,18 @@ extern "C" {
     void AnimList_NoLoad(void) {
     }
 
-    void AnimList_RequestAnimGroupForCreatures(void) {
+    void AnimList_RequestAnimGroups(i32 group, ...) {
     }
 
-    void AnimList_RequestAnimGroups(void) {
+    void AnimList_RequestAnimGroupForCreatures(i32 creature, ...) {
+        va_list groups;
+        va_start(groups, creature);
+        i32 group = va_arg(groups, i32);
+        while (group != -1) {
+            AnimList_RequestAnimGroups(group, creature, -1);
+            group = va_arg(groups, i32);
+        }
+        va_end(groups);
     }
 
     i32 AnimMiscFlags(CHARACTERMODEL_s *model, i32 animation) {
@@ -2825,21 +2819,6 @@ extern "C" {
         packet->blend_target_reversed = 0;
         packet->current_reversed = 0;
         packet->overlay_animation = -1;
-    }
-
-    f32 *AnimPlaying(ANIMPACKET_s *packet, i32 animation, i32 target, i32 source) {
-        if (packet == NULL || animation == -1)
-            return NULL;
-        if (packet->blending == 0) {
-            if (packet->animation_index == animation)
-                return &packet->current_time;
-        } else {
-            if (target != 0 && packet->blend_animation_b == animation)
-                return &packet->blend_target_time;
-            if (source != 0 && packet->blend_animation_a == animation)
-                return &packet->blend_source_time;
-        }
-        return NULL;
     }
 
     void AnimsAvailableToBothCharacters(void) {
@@ -3082,27 +3061,27 @@ extern "C" {
     }
 
     bool StateAnimEvaluate2(StateAnim *state, u8 *index, char *value, f32 frame) {
-        u32 current = *index;
-        u32 count = state->count;
+        i32 current = *index;
+        i32 count = state->count;
         if (current >= count) {
             current = count - 1;
         }
+        if (current < 0) {
+            current = 0;
+        }
         char old_value = state->values[current];
-        u32 selected;
         if (frame < state->times[current]) {
-            selected = current;
-            while (selected != 0 && frame < state->times[selected - 1]) {
-                --selected;
+            while (current != 0 && frame < state->times[current - 1]) {
+                --current;
             }
         } else {
-            selected = current;
-            while (selected + 1 < count && state->times[selected + 1] <= frame) {
-                ++selected;
+            while (current < count - 1 && state->times[current + 1] <= frame) {
+                ++current;
             }
         }
-        char new_value = state->values[selected];
+        char new_value = state->values[current];
         *value = new_value;
-        *index = static_cast<u8>(selected);
+        *index = static_cast<u8>(current);
         return old_value != new_value;
     }
 

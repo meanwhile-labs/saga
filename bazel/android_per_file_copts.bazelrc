@@ -11,6 +11,9 @@ build:target --per_file_copt=^src/batman\.cpp$@-O2
 build:target --per_file_copt=^src/java/android\.cpp$@-O2
 # Original OBB lookup uses optimized inlined strlen/strcat and omits leaf frames.
 build:target --per_file_copt=^src/gamelib/util/AndroidOBBUtils\.cpp$@-O3
+# The allocator has no vectorizable code; -O2 and -O3 emit the same measured
+# bodies, including nine exact constructors/destructor helpers.
+build:target --per_file_copt=^src/gamelib/util/VirtualStackAllocator\.cpp$@-O2
 # Recovered stub-only device units: -O3 reproduces FileSize exactly and the
 # APK constructor/CreateNuFile and SetCurrentDir bodies apart from relocation.
 build:target --per_file_copt=^src/nu2api/nufile/nufiledevice\.cpp$@-O3
@@ -41,19 +44,32 @@ build:target --per_file_copt=^src/legogame/target_android\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/render/core/gameliball\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/misc/gamelib_utilities\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/misc/legoapi_misc\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/misc/memory\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/misc/utilities\.cpp$@-O2
+build:target --per_file_copt=^src/legoapi/misc/androidbatman\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/render/core/terrain\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/render/core/terrain_stubs\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/render/core/terrain_runtime\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/actions/character/transform\.cpp$@-O3
+# The original static initializer and array maintenance require -O3.
+build:target --per_file_copt=^src/legoapi/actions/character/simpletons\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/actions/character/specialmoves\.cpp$@-O3
+# Snake-body allocation and destruction are optimized in the target: the
+# four-slot search is unrolled and the fixed-size clear is emitted inline.
+build:target --per_file_copt=^src/legoapi/actions/character/snake\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/actions/combat/hits\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/actions/combat/fighting\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/actions/combat/shovesys\.cpp$@-O1
 build:target --per_file_copt=^src/legoapi/actions/movement/pushblocks\.cpp$@-O1
+build:target --per_file_copt=^src/legoapi/actions/movement/jumping\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/actions/movement/climbing\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/render/core/render\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/render/core/screen\.cpp$@-O2
+# Shader material filters use optimized switch lowering and leaf epilogues.
+build:target --per_file_copt=^src/legoapi/render/core/shader\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/render/fx/edsplines\.cpp$@-O3
 build:target --per_file_copt=^src/gamelib/NewTerrain\.cpp$@-O2
-build:target --per_file_copt=^src/gamelib/crc/crc\.cpp$@-O3
+build:target --per_file_copt=^src/gamelib/crc/crc\.cpp$@-O2
 build:target --per_file_copt=^src/gamelib/nuwind/nuwind\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/world/area\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/base/gizmo\.cpp$@-O3
@@ -67,20 +83,30 @@ build:target --per_file_copt=^src/legoapi/characters/core/players\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/core/characters\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/core/character\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/motion/gameanim\.cpp$@-O2
+build:target --per_file_copt=^src/legoapi/characters/motion/animation\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/motion/chris\.cpp$@-O2
+# The original keeps ResetSpaceLevel's full local symbol and passes its two
+# pointer arguments in eax/edx; disabling IPA-SRA reproduces that exact shape.
+build:target --per_file_copt=^src/legoapi/characters/motion/chris\.cpp$@-fno-ipa-sra
 build:target --per_file_copt=^src/legoapi/cutscenes/cutscene\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/core/playeritems\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/motion/charshadows\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/actions/movement/dropinout\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/ai/game/creature\.cpp$@-O2
+build:target --per_file_copt=^src/legoapi/ai/game/gameantinode\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/ai/core/ai_sys_stubs\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/ai/core/aisysall\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/ai/game/starwars_gameai\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/ai/game/aipathcnxhelper\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/core/config/cheats\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/base/collection\.cpp$@-O3
+# Game-object initialization uses optimized pointer-induction loops in the target.
+build:target --per_file_copt=^src/legoapi/items/base/game_object\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/items/collect/bolt\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/collect/bolts\.cpp$@-O2
+build:target --per_file_copt=^src/legoapi/items/collect/attracto\.cpp$@-O3
+# Shard collection and lookup bodies are optimized in the target.
+build:target --per_file_copt=^src/legoapi/items/collect/shard\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/objects/gameobjects\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/objects/objectsall\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/props/doors/door\.cpp$@-O3
@@ -106,6 +132,8 @@ build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_gizactions\.cpp$@-
 build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_gizmopickups\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/object/gizbuildit\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_gizobstacles\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_grabber\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_newblowup\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_tubes\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/world/world\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/world/levelconfig\.cpp$@-O3
@@ -128,7 +156,7 @@ build:target --per_file_copt=^src/legoapi/gizmo/object/gizmoblowups\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/object/gizmopickups\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmos/traps/gizforce\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/gizmos/gizmos_gizpanel\.cpp$@-O3
-build:target --per_file_copt=^src/legoapi/gizmos/object/gizpanel\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/gizmos/object/gizpanel\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/gizmos/fx/gizmopickups\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmos/object/gizobstacles\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmos/transport/gizportal\.cpp$@-O3
@@ -200,6 +228,7 @@ build:target --per_file_copt=^src/nu2api/nucore/NuInputDevice\.cpp$@-O2
 build:target --per_file_copt=^src/nu2api/nucore/NuInputManager\.cpp$@-O2
 build:target --per_file_copt=^src/nu2api/nucore/NuMemoryManager\.cpp$@-O2
 build:target --per_file_copt=^src/nu2api/nucore/NuMemoryPool\.cpp$@-O2
+build:target --per_file_copt=^src/nu2api/nucore/hashedkey\.cpp$@-O2
 build:target --per_file_copt=^src/nu2api/nucore/NuThreadManager\.cpp$@-O2
 build:target --per_file_copt=^src/nu2api/nucore/NuVirtualTouchDevice\.cpp$@-O3
 build:target --per_file_copt=^src/nu2api/nucore/deflate\.cpp$@-O3
@@ -262,7 +291,10 @@ build:target --per_file_copt=^src/nu2api/nusound/nusound_effect_doppler\.cpp$@-O
 build:target --per_file_copt=^src/nu2api/nusound/nusound_effect_fader\.cpp$@-O3
 build:target --per_file_copt=^src/nu2api/nusound/nusound_effect_pitchramp\.cpp$@-O3
 build:target --per_file_copt=^src/MechInputTouch/MechInputTouchButton\.cpp$@-O2
+build:target --per_file_copt=^src/MechInputTouch/MechAutoJumpManager\.cpp$@-O3
+build:target --per_file_copt=^src/MechInputTouch/MechInputTouch\.cpp$@-O3
 build:target --per_file_copt=^src/MechInputTouch/MechInputTouchMainController\.cpp$@-O2
+build:target --per_file_copt=^src/MechInputTouch/MechInputTouchGestureBasedController\.cpp$@-O2
 build:target --per_file_copt=^src/MechInputTouch/MechSystems\.cpp$@-O2
 build:target --per_file_copt=^src/MechInputTouch/MechTouchUIElements\.cpp$@-O3
 build:target --per_file_copt=^src/editor/aieditor\.cpp$@-O2
@@ -290,6 +322,7 @@ build:target --per_file_copt=^src/nu2api/nusound/nusound_handle\.cpp$@-O2
 build:target --per_file_copt=^src/gamelib/util/Ftp\.cpp$@-O3
 build:target --per_file_copt=^src/gamelib/util/Network\.cpp$@-O3
 build:target --per_file_copt=^src/gamelib/util/V2SessionManager\.cpp$@-O3
+build:target --per_file_copt=^src/nu2api/nu3d/nushadermanager_plain\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/ai/game/aitrigger\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/audio/radio\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/gizmo/object/gizforce\.cpp$@-O3
@@ -297,8 +330,11 @@ build:target --per_file_copt=^src/legoapi/gizmo/object/gizmopickup\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/collect/batarang\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/collect/minikits\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/items/fx/ripples\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/items/collect/torpedo\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/characters/core/charconfig\.cpp$@-O2
 build:target --per_file_copt=^src/legoapi/characters/motion/move\.cpp$@-O2
+build:target --per_file_copt=^src/legoapi/props/objects/ledge\.cpp$@-O3
+build:target --per_file_copt=^src/legoapi/actions/movement/pushing\.cpp$@-O3
 build:target --per_file_copt=^src/MechInputTouch/MechInputTouchContextTasks\.cpp$@-O2
 build:target --per_file_copt=^src/gamelib/util/TouchHacks\.cpp$@-O2
 
@@ -311,3 +347,4 @@ build:target --per_file_copt=^src/legoapi/render/fx/game_deb\.cpp$@-O3
 build:target --per_file_copt=^src/legoapi/actions/movement/supercarry\.cpp$@-O3
 build:target --per_file_copt=^src/nu2api/nuandroid/nuphoneos\.cpp$@-O3
 build:target --per_file_copt=^src/gameapi/edtools/edui\.cpp$@-O3
+build:target --per_file_copt=^src/gameapi/edtools/edui\.c$@-O3

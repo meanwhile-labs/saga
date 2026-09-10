@@ -67,6 +67,7 @@ void NuDebugMsgPrint(char *);
 #include "nu2api/nu3d/nuvport.h"
 #include "nu2api/nu3d/nuocclusion.h"
 #include "nu2api/nu3d/nurndr.h"
+#include "nu2api/nu3d/nuscreen.hpp"
 #include "nu2api/numath/nutrig.h"
 #include "nu2api/numath/nufloat.h"
 #include "nu2api/numath/nuquat.h"
@@ -83,6 +84,10 @@ extern "C" {
     NUANIMBUFFEVALUATECB AnimBuffEvalCB = NULL;
     void **AnimBuffEvalData = NULL;
     i32 *AnimBuffEvalJoint = NULL;
+    i32 nuspecial_shadowLightCount = 0;
+    i32 nuspecial_shadowLightHaveClipOverrides = 0;
+    void *nuspecial_shadowLight[4];
+    i32 nuspecial_shadowLightClipOverride[4];
 }
 
 extern "C" void ANI_FixUpAddrs(ani3_animheader_s *, isize, i32);
@@ -152,9 +157,16 @@ namespace {
     };
 
     static i32 nuspecial_clip_state = -1;
-    static i32 nuspecial_shadow_light_count = 0;
-    static i32 nuspecial_shadow_light_have_clip_results = 0;
 } // namespace
+
+static i32 NuTimeBar_EngineEnabled;
+static i32 NuTimeBar_GpuFrameOutEnabled;
+static i32 clip_special_objects = 1;
+
+using NUHGOBJVIDEOMEMFN = void (*)(nuhgobj_s *);
+
+NUHGOBJVIDEOMEMFN hgobj_to_video_mem;
+NUHGOBJVIDEOMEMFN video_mem_to_hgobj;
 
 extern "C" {
     i32 nuspecial_const_tint_enabled;
@@ -776,7 +788,8 @@ extern "C" {
     }
     void NuDisplayListBurstRndrSpecial(void) {
     }
-    void NuDisplayListClipSpecials(void) {
+    void NuDisplayListClipSpecials(i32 enabled) {
+        clip_special_objects = enabled;
     }
     void DisplayListCreateFxItemPS(void *item, i32 type);
     void DisplayListCreateFxList(VARIPTR *buffer, VARIPTR end, i32 count) {
@@ -878,8 +891,6 @@ extern "C" {
         }
         NuThreadCriticalSectionEnd(global_dlist_manager.loading_critical_section);
     }
-    void NuDisplayListDraw(void) {
-    }
     void NuDisplayListDrawAll(void) {
         NuDisplayListCaptureBegin();
         if (global_dlist_manager.nrender_scenes == 0)
@@ -949,16 +960,16 @@ static __attribute__((used)) void NuDisplayListSetNext(nudisplaylistitem_s *item
     item->next = next;
 }
 static __attribute__((used)) void NuDisplayListSetID_CNT(nudisplaylistitem_s *item) {
-    (void)item;
+    item->id = 0;
 }
 static __attribute__((used)) void NuDisplayListSetID_RET(nudisplaylistitem_s *item) {
-    (void)item;
+    item->id = 4;
 }
 static __attribute__((used)) void NuDisplayListSetID_CALL(nudisplaylistitem_s *item) {
     (void)item;
 }
 static __attribute__((used)) void NuDisplayListSetID_NEXT(nudisplaylistitem_s *item) {
-    (void)item;
+    item->id = 1;
 }
 
 extern "C" {
@@ -1347,13 +1358,15 @@ extern "C" {
     }
     void NuIOS_HardwareSupportsRetina(void) {
     }
-    void NuIOS_IsLowestEndDevice(void) {
+    i32 NuIOS_IsLowestEndDevice(void) {
+        return g_isLowestEndDevice;
     }
     i32 NuIOS_IsMidRangeDevice(void) {
         return 0;
     }
     i32 NuIOS_IsSmallScreen(void) {
-        return 0;
+        NuScreen *screen = NuScreen::Get();
+        return screen->GetWidth() * screen->GetHeight() < 10000.0f;
     }
     void NuIOS_RecordFlurryEvent(char *event_name) {
         JNIEnv *env = NULL;
@@ -2211,7 +2224,8 @@ extern "C" {
     NUQFNT_CSMODE NuQFntGetCoordinateSystem(void) {
         return NuQFntCSMode;
     }
-    void NuQFntGetPrintMode(void) {
+    u32 NuQFntGetPrintMode(void) {
+        return NuQFntMode;
     }
     f32 NuQFntHeightScale(void) {
         return qfnt_height_scale;
@@ -2263,7 +2277,8 @@ extern "C" {
     }
     void NuQFntSetPointSize(void) {
     }
-    void NuQFntSetPrintMode(void) {
+    void NuQFntSetPrintMode(u32 mode) {
+        NuQFntMode = mode;
     }
     void NuQFntSetScale2d(void) {
     }
@@ -2436,19 +2451,9 @@ extern "C" {
     }
     static void NuFramebufferSwapBuffers(void) {
     }
-    void NuLightAddSpot(void) {
-    }
-    void NuLightFogG(void) {
-    }
-    void NuLightFogPal(void) {
-    }
     void NuLightFogX(f32 near_distance, f32 far_distance, u32 colour, f32, f32, i32, f32 density) {
         NuRndrStateSetFogEnabled(1);
         NuRndrStateSetFogState(near_distance, far_distance, colour, density);
-    }
-    void NuLightInit(void) {
-    }
-    void NuLightMatInit(void) {
     }
     i32 speedblur_enabled = 1;
     f32 NuLightsx, NuLightsy;
@@ -2474,8 +2479,6 @@ extern "C" {
     void NuLightSpeedBlurScale(f32 x, f32 y) {
         NuLightsx = x;
         NuLightsy = y;
-    }
-    void NuLightSpotFadeSet(u32) {
     }
     void NuLgtArcLaser(void) {
     }
@@ -2522,10 +2525,6 @@ extern "C" {
         currentScene.bloom = *parameters;
     }
     // This entry point is empty in the original Android binary.
-    void NuRainDraw(i32) {
-    }
-    void NuRainProcess(void) {
-    }
     void NuRainSetFall(void) {
     }
     void NuRenderContextInit(void) {
@@ -2620,10 +2619,14 @@ extern "C" {
     }
     void NuSpecialBurstDrawAt(void) {
     }
-    void NuSpecialClear(void *) {
+    void NuSpecialClear(void *special) {
+        NuPlainSpecialHandleLayout *handle = static_cast<NuPlainSpecialHandleLayout *>(special);
+        handle->scene = NULL;
+        handle->special = NULL;
+        handle->display_special = NULL;
     }
     void NuSpecialClearShadowClipTestResults(void) {
-        nuspecial_shadow_light_have_clip_results = 0;
+        nuspecial_shadowLightHaveClipOverrides = 0;
     }
     void NuSpecialClearShadowLights(void) {
     }
@@ -2686,7 +2689,8 @@ extern "C" {
     }
     void NuSpecialFindMultiWC(void) {
     }
-    void NuSpecialGetActiveShadowLights(void) {
+    i32 NuSpecialGetActiveShadowLights(void) {
+        return nuspecial_shadowLightCount;
     }
     void NuSpecialGetBounds(void *special, NUVEC *minimum, NUVEC *maximum) {
         NuPlainSpecialHandleLayout *handle = reinterpret_cast<NuPlainSpecialHandleLayout *>(special);
@@ -2843,14 +2847,20 @@ extern "C" {
         *position = object->center;
         *radius = object->radius;
     }
-    void NuSpecialGetShadowClipTestResult(void) {
+    i32 NuSpecialGetShadowClipTestResult(i32 index) {
+        if (nuspecial_shadowLightHaveClipOverrides != 0) {
+            return nuspecial_shadowLightClipOverride[index];
+        }
+        return -1;
     }
-    void NuSpecialGetShadowLight(void) {
+    void *NuSpecialGetShadowLight(i32 index) {
+        return nuspecial_shadowLight[index];
     }
     i32 NuSpecialHasActiveShadowLights(void) {
-        return nuspecial_shadow_light_count > 0;
+        return nuspecial_shadowLightCount > 0;
     }
-    void NuSpecialHaveShadowClipTestResults(void) {
+    i32 NuSpecialHaveShadowClipTestResults(void) {
+        return nuspecial_shadowLightHaveClipOverrides;
     }
     void NuSpecialList(void) {
     }
@@ -2939,12 +2949,6 @@ extern "C" {
     }
     void NuTimeBarSlotSetEx(void) {
     }
-    void NuWaterInit(void) {
-    }
-    void NuWaterOverride(void) {
-    }
-    void NuWaterRender(void) {
-    }
 
     // ---------------------------------------------------------------------------
     // Light / wind / particles / debris
@@ -2970,13 +2974,22 @@ extern "C" {
     }
     void NuDynamicLightGetParameterf(void) {
     }
-    void NuDynamicLightGetParameteri(void) {
+    i32 NuDynamicLightGetParameteri(NuDynamicLight *light, i32 parameter) {
+        switch (parameter) {
+            case 4:
+                return light->parameter_4;
+            case 5:
+                return light->parameter_5;
+            default:
+                return 0;
+        }
     }
     void NuDynamicLightGetProjection(void) {
     }
     void NuDynamicLightGetView(void) {
     }
-    void NuDynamicLightIsUsedOnSpecials(void) {
+    i32 NuDynamicLightIsUsedOnSpecials(NuDynamicLight *light) {
+        return light->used_on_specials;
     }
     void NuDynamicLightLookAt(void) {
     }
@@ -2991,7 +3004,8 @@ extern "C" {
     }
     void NuDynamicLightSetParameteri(void) {
     }
-    void NuDynamicLightSetUsedOnSpecials(void) {
+    void NuDynamicLightSetUsedOnSpecials(NuDynamicLight *light, i32 enabled) {
+        light->used_on_specials = enabled;
     }
     void NuDynamicLightSetupCustomCameraFrustum(void) {
     }
@@ -3059,19 +3073,10 @@ extern "C" {
     }
     void NuWindUpdateArray(NUVEC **);
 
-    void NuPartEnableRayCasts(void) {
-    }
-    void NuPartGetSeed(void) {
-    }
     extern "C" f32 partglobaltime;
     void NuPartResetGlobalTime(void) {
         partglobaltime = 0;
     }
-    void NuPartSetSeed(i32) {
-    }
-    void NuPolyShadowInit(void) {
-    }
-
     // ---------------------------------------------------------------------------
     // Gobj / hierarchy / scene graph
     // ---------------------------------------------------------------------------
@@ -3306,7 +3311,8 @@ extern "C" {
         nuapi.force_shadows_on_characters = enabled;
         return previous;
     }
-    void NuHGobjFromVideoMem(void) {
+    void NuHGobjFromVideoMem(NUHGOBJVIDEOMEMFN callback) {
+        video_mem_to_hgobj = callback;
     }
     nuhgobjpoi_s *NuHGobjGetPOI(nuhgobj_s *object, i32 index) {
         const u8 mapped_index = static_cast<u8>(index);
@@ -3506,9 +3512,11 @@ extern "C" {
         }
         return 1;
     }
-    void NuHGobjSetClippingRootTrackerOverride(void) {
+    void NuHGobjSetClippingRootTrackerOverride(i32 enabled) {
+        CutSceneBoundingBoxTrackRoot = static_cast<u8>(enabled);
     }
-    void NuHGobjToVideoMem(void) {
+    void NuHGobjToVideoMem(NUHGOBJVIDEOMEMFN callback) {
+        hgobj_to_video_mem = callback;
     }
     void NuGCutCharAnimProcess(NUGCUTCHAR_s *character, f32 frame, NUMTX *matrix, i32 *visible, u32 *animation_index,
                                f32 *animation_rate, f32 *blend_time, f32 *animation_start_frame, i32 *layer_mask) {
@@ -3607,15 +3615,7 @@ extern "C" {
     void NuGCutSetCutAudioStream(i32 stream) {
         NuGCutAudioStream = stream;
     }
-    void NuGSceneProcessCrossFade(void) {
-    }
     void NuGSceneSetCrossFade(void) {
-    }
-    void NuGSceneSetCrossFadeAlpha(void) {
-    }
-    void NuGHGPostRelocateFixupPS(void) {
-    }
-    void NuGHGPreRelocateFixupPS(void) {
     }
     void NuGHGRelocate(void) {
     }
@@ -3675,9 +3675,6 @@ extern "C" {
     }
     void NuPs2VideoScreenDump(void) {
     }
-    void NuPs2VideoSetPos(void) {
-    }
-
     // ---------------------------------------------------------------------------
     // Culling / visibility / portals / occlusion
     // ---------------------------------------------------------------------------
@@ -3956,9 +3953,11 @@ extern "C" {
     }
     void NuTimeBarDestroySet(void) {
     }
-    void NuTimeBarEnable(void) {
+    void NuTimeBarEnable(i32 enabled) {
+        NuTimeBar_EngineEnabled = enabled;
     }
-    void NuTimeBarIndicateGpuFrameOut(void) {
+    void NuTimeBarIndicateGpuFrameOut(i32 enabled) {
+        NuTimeBar_GpuFrameOutEnabled = enabled;
     }
     void NuTimeBarInit(void) {
     }
@@ -3983,8 +3982,6 @@ extern "C" {
     }
     void NuTimeGetStartFrame(void) {
     }
-    void NuTimeGetTime(void) {
-    }
     void NuTimeStartFrame(void) {
     }
 
@@ -3992,10 +3989,6 @@ extern "C" {
     // Thread / misc OS
     // ---------------------------------------------------------------------------
 
-    void NuDisableVBlankE(void) {
-    }
-    void NuEnableVBlankE(void) {
-    }
 #ifndef ANDROID
     void NuGetCurrentThreadId(void) {
     }
@@ -4016,8 +4009,6 @@ extern "C" {
 
     void NuSetGetHGObjFromIndxFn(NUGCUTSCENEGETHGOBJFN function) {
         NuCutSceneGetHGObj = function;
-    }
-    void NuSetPadDemoEndButtons(u32) {
     }
     void NuSetCutSceneCharacterCreateDataFn(NUGCUTSCENECHARACTERCREATEDATAFN function) {
         NuCutSceneCharacterCreateData = function;
@@ -4137,8 +4128,6 @@ extern "C" {
     void NuOnlineSetPropertyPS(i32 property, i32 size, void *data) {
         NuOnlineSetPropertyProfilePS(g_signedinUser, property, size, data);
     }
-    void NuOnlineSignInPlayer(void) {
-    }
     i32 NuOnlineSignInPlayerPS(void) {
         return 0;
     }
@@ -4178,15 +4167,6 @@ struct nuframebuffer_s;
 struct nushaderobject_s;
 union variptr_u;
 
-void NuXboxLiveInit() {
-}
-void NuPs2PadDemoEnd() {
-}
-i32 NuPs2GetLanguage() {
-    return 0;
-}
-void NuPs2PadSetMotors(nupad_s *, i32, i32) {
-}
 void Nu360ConfigureSMBSharing(char **) {
 }
 void NuFramebuffer360EndZPass() {

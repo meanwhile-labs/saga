@@ -263,7 +263,7 @@ extern "C" void RndrOSquare(NUVEC *centre, f32 radius, i32 colour) {
     }
 }
 
-extern "C" void RndrOSphere(NUVEC *centre, f32 radius, i32 colour, i32 segments) {
+extern "C" void RndrOSphere(NUVEC *centre, f32 radius, i32 colour, i32 segments, i32) {
     NUMTX matrix = global_camera.mtx;
     matrix.m30 = centre->x;
     matrix.m31 = centre->y;
@@ -956,7 +956,8 @@ i32 NuGScnUploadGfxDataFromFilePS(VARIPTR *buf, VARIPTR buf_end, i32 file) {
     return total_size;
 }
 
-static NUGSCN *NuReadGraphicsData(VARIPTR *buf, VARIPTR *buf_end, char *path, NUGSCN *scene) {
+static NUGSCN *NuReadGraphicsData(VARIPTR *buf, VARIPTR *buf_end, char *path, char *, char *scene_data) {
+    NUGSCN *scene = reinterpret_cast<NUGSCN *>(scene_data);
     if (scene == NULL) {
         char converted_path[1033];
         NuFileExtConvert(converted_path, path);
@@ -1029,20 +1030,20 @@ extern "C" {
     NUGSCN *NuGScnRead(VARIPTR *buf, VARIPTR buf_end, char *path) {
         RemoveDirectionalMaps = 1;
         RemoveNormalMaps = 1;
-        NUGSCN *scene = NuReadGraphicsData(buf, &buf_end, path, NULL);
+        NUGSCN *scene = NuReadGraphicsData(buf, &buf_end, path, NULL, NULL);
         RemoveNormalMaps = 0;
         RemoveDirectionalMaps = 0;
         return scene;
     }
     void NuGScnReadFromMemory(NUGSCN *scene) {
-        NuReadGraphicsData(NULL, NULL, NULL, scene);
+        NuReadGraphicsData(NULL, NULL, NULL, NULL, reinterpret_cast<char *>(scene));
     }
-    void NuGHGFixup(NUGSCN *scene) {
-        NuGScnReadFromMemory(scene);
+    NUGSCN *NuGHGFixup(NUGSCN *scene, void *) {
+        return NuReadGraphicsData(NULL, NULL, NULL, NULL, reinterpret_cast<char *>(scene));
     }
     nuhgobj_s *NuGHGRead(char *path, VARIPTR *buf, VARIPTR buf_end) {
         nuapi.loading_hgobj = 1;
-        nuhgobj_s *object = reinterpret_cast<nuhgobj_s *>(NuReadGraphicsData(buf, &buf_end, path, NULL));
+        nuhgobj_s *object = reinterpret_cast<nuhgobj_s *>(NuReadGraphicsData(buf, &buf_end, path, NULL, NULL));
         if (object != NULL && nuapi.force_shadows_on_characters != 0 && object->display_list != NULL) {
             for (i32 i = 0; i < object->display_list->nspecials; ++i) {
                 object->display_list->visibility_flags[i] |= 0x20;
@@ -3359,8 +3360,15 @@ SwipeDecalRenderer::SwipeDecalRenderer(TouchHolder &, i32, SwipeDecalRenderer::S
 static __used__ void PauseRenderOff() {
 }
 
-static __used__ bool MatrixReflection_CanOverride() {
-    return false;
+static __used__ i32 MatrixReflection_CanOverride() {
+    i32 result = 1;
+    if (WORLD->current_level == DEATHSTARESCAPEA_LDATA) {
+        const i8 sock = GameCam->sock_position.location.sock;
+        if (sock != 0) {
+            result = sock == 3;
+        }
+    }
+    return result;
 }
 
 static __used__ void DrawStarFighter(starfighter_s *) {
@@ -4015,12 +4023,6 @@ static __used__ double ApplyAntilights(rtl_s *, rtlidata_s *, float) {
 }
 
 static __used__ void DisplayListMaterialClipUpdate(nudisplayscene_s *) {
-}
-
-static __used__ void SelectNextFog() {
-}
-
-static __used__ void SelectPrevFog() {
 }
 
 static __used__ void PreWarmGeomsAndBakeVAOs(nudisplayscene_s *raw_scene, nunativegscene_s *) {

@@ -2,8 +2,12 @@
 
 #include "globals.h"
 #include "legoapi/core/input/qrand.h"
+#include "legoapi/core/config/cheat.h"
 #include "legoapi/characters/core/character.h"
+#include "legoapi/characters/motion.h"
+#include "legoapi/characters/motion/gameanim.h"
 #include "legoapi/items/base/apiobject.h"
+#include "legoapi/items/base/collection.h"
 #include "legoapi/legoapi_types.h"
 #include "nu2api/nu3d/nurndr.h"
 #include "nu2api/numath/nufloat.h"
@@ -12,11 +16,16 @@
 #include "legoapi/render/light/shadow.h"
 
 f32 GameShadow(GameObject_s *, NUVEC *, f32, i32);
+i32 SuperWeirdo(GameObject_s *);
+i32 GizForce_StoodOnForce(GIZFORCE_s *, GameObject_s *);
 
 NUCOLOUR3 flashCol = {2.0f, 2.0f, 2.0f};
 bool TouchHacks::TouchControlsActive;
 extern i32 BonusArea;
 extern "C" i16 id_GRABCONTROL, id_WICKET, id_EWOK;
+extern "C" i16 id_ATST, id_ATST_LOWRES;
+extern "C" i16 id_WATTO, id_GONKDROID;
+extern i16 LEGOACT_SLAM;
 
 bool TouchHacks::AiPlayerTakeDamageOnKillRescue(GameObject_s &) {
     return TouchControlsActive;
@@ -41,7 +50,12 @@ i32 TouchHacks::CanBlowupBeBlownUp(GIZMOBLOWUP_s &blowup, i32 hit_type) {
 void TouchHacks::CanForceTargetObj(GameObject_s &, GameObject_s &) {
 }
 
-void TouchHacks::CanJump(GameObject_s &) {
+bool TouchHacks::CanJump(GameObject_s &object) {
+    return (object.apiobj.field_0x27d != 0 || object.ground_contact_grace_timer > 0.0f) &&
+           object.apiobj.character_model != NULL && ObjLandReady(&object) &&
+           (object.apiobj.character_model->model_data_b[6] != NULL ||
+            (object.apiobj.character_data->model_flags & 0x40) != 0 || object.id == id_WATTO ||
+            (object.id == id_GONKDROID && Cheat_IsOn(8)));
 }
 
 void TouchHacks::CanJumpToPoint(GameObject_s &, AIPATHNODE_s const &) {
@@ -50,16 +64,25 @@ void TouchHacks::CanJumpToPoint(GameObject_s &, AIPATHNODE_s const &) {
 void TouchHacks::CanJumpToPoint(GameObject_s &, VuVec const &) {
 }
 
-void TouchHacks::CanLunge(GameObject_s &) {
+bool TouchHacks::CanLunge(GameObject_s &object) {
+    CHARACTERDATA *character = object.apiobj.character_data;
+    return (character->game_character->field275_0x116 != 0 || (character->model_flags & 8) != 0) &&
+           LEGOACT_LUNGE != -1 && object.apiobj.character_model->model_data_b[LEGOACT_LUNGE] != NULL;
 }
 
-void TouchHacks::CanPoo(GameObject_s &) {
+bool TouchHacks::CanPoo(GameObject_s &object) {
+    return (object.apiobj.character_data->game_character->flags_094[3] & 0x80) != 0 && object.character_context == -1 &&
+           object.apiobj.field_0x27d != 0 && (object.apiobj.flags_low & 0x80) != 0 &&
+           (Cheat[1].enabled != 0 || Cheat[9].enabled != 0);
 }
 
-void TouchHacks::CanShoot(GameObject_s &) {
+bool TouchHacks::CanShoot(GameObject_s &object) {
+    CHARACTERDATA *character = object.apiobj.character_data;
+    return (character->model_flags & 0x10000000) != 0 && (character->game_character->flags_094[0] & 8) == 0;
 }
 
-void TouchHacks::CanSlam(GameObject_s &) {
+bool TouchHacks::CanSlam(GameObject_s &object) {
+    return LEGOACT_SLAM != -1 && object.apiobj.character_model->model_data_b[LEGOACT_SLAM] != NULL;
 }
 
 void TouchHacks::CanTagTo(GameObject_s &, GameObject_s &) {
@@ -89,25 +112,75 @@ bool TouchHacks::CanToggleTo(GameObject_s &object, i32 id) {
     return true;
 }
 
-void TouchHacks::CanUseBuildIt(GameObject_s &) {
+bool TouchHacks::CanUseBuildIt(GameObject_s &object) {
+    return LEGOACT_BUILD != -1 && object.apiobj.character_model != NULL &&
+           object.apiobj.character_model->model_data_b[LEGOACT_BUILD] != NULL &&
+           !AnimPlaying(&object.apiobj.anim_packet, LEGOACT_BUILD, 1, 1) && object.apiobj.field_0x27d != 0 &&
+           ObjLandReady(&object) != 0;
 }
 
-void TouchHacks::CanUseGizForce(GameObject_s &) {
+bool TouchHacks::CanUseGizForce(GameObject_s &object) {
+    return object.apiobj.character_data != NULL && (object.apiobj.character_data->model_flags & 8) != 0;
 }
 
-void TouchHacks::CanUseGizForce(GameObject_s &, GIZFORCE_s &) {
+bool TouchHacks::CanUseGizForce(GameObject_s &object, GIZFORCE_s &force) {
+    if (force.using_object != NULL || force.field_0x3c_bits != 0 ||
+        (force.state_flags & GIZFORCE_STATE_DESTROYED_OR_THROWN) != 0) {
+        return false;
+    }
+
+    i32 can_use_restricted_force;
+    if (SuperWeirdo(&object) == 0) {
+        if (static_cast<i8>(object.apiobj.flags_low) < 0 && Cheat_IsOn(25) != 0) {
+            can_use_restricted_force = 1;
+        } else {
+            can_use_restricted_force = 0;
+        }
+    } else {
+        can_use_restricted_force = 1;
+    }
+    if ((force.config_flags & GIZFORCE_CONFIG_JEDI_BADDIE_ONLY) != 0 &&
+        (object.apiobj.character_data->model_flags & 4) == 0 && can_use_restricted_force == 0) {
+        return false;
+    }
+
+    if (force.group == NULL) {
+        if (GizForce_Complete(&force) != 0) {
+            return false;
+        }
+    } else if (force.group->count != 0) {
+        GIZFORCE_s *last = force.group->forces[force.group->count - 1];
+        if (last != &force) {
+            if ((force.group->field_0x24 & GIZFORCE_GROUP_ACTIVE) != 0 ||
+                force.anim_set->state == GAMEANIMSET_STATE_AT_END) {
+                return false;
+            }
+            if (last != NULL && ((last->anim_set->flags & 7) != 0 || last->using_object != NULL)) {
+                return false;
+            }
+        }
+    }
+
+    return GizForce_StoodOnForce(&force, &object) == 0;
 }
 
-void TouchHacks::CanUseHatMachine(GameObject_s &) {
+bool TouchHacks::CanUseHatMachine(GameObject_s &object) {
+    return object.apiobj.character_model->model_data_b[93] != NULL && object.apiobj.field_0x27d != 0 &&
+           ObjLandReady(&object) != 0;
 }
 
-void TouchHacks::CanUseLever(GameObject_s &) {
+bool TouchHacks::CanUseLever(GameObject_s &object) {
+    return object.apiobj.character_model->model_data_b[93] != NULL && object.apiobj.field_0x27d != 0;
 }
 
-void TouchHacks::CanUseTeleport(GameObject_s &) {
+bool TouchHacks::CanUseTeleport(GameObject_s &object) {
+    return object.apiobj.character_data != NULL &&
+           ((object.apiobj.character_data->model_flags & 0x40000) != 0 || SuperWeirdo(&object));
 }
 
-void TouchHacks::CanUseVehicleSmartBomb(GameObject_s &) {
+bool TouchHacks::CanUseVehicleSmartBomb(GameObject_s &object) {
+    return Cheat_IsOn(20) && (object.apiobj.flags_low & 0x80) != 0 &&
+           (object.apiobj.character_data->model_flags & 0x2000) != 0 && InCollectList_Index(object.id, NULL, 0) != -1;
 }
 
 bool TouchHacks::CanUseZipup(GameObject_s &object) {
@@ -188,7 +261,10 @@ bool TouchHacks::InParty(GameObject_s &object) {
 void TouchHacks::PlaySmartBombBuildupEffects(GameObject_s &, float, float) {
 }
 
-void TouchHacks::ShouldAutoGrabDragBomb(GameObject_s &) {
+bool TouchHacks::ShouldAutoGrabDragBomb(GameObject_s &object) {
+    if (object.id == id_ATST || object.id == id_ATST_LOWRES)
+        return false;
+    return TouchControlsActive;
 }
 
 bool TouchHacks::ShouldBlock(GameObject_s &object) {
@@ -199,7 +275,6 @@ bool TouchHacks::ShouldBlock(GameObject_s &object) {
 }
 
 CABLE_s *GameObjIsCableTied(GameObject_s *);
-extern "C" i16 id_ATST, id_ATST_LOWRES;
 i32 TouchHacks::ShouldDeflectBolt(GameObject_s &object, BOLT_s &bolt) {
     if (!TouchControlsActive || VehicleArea == 0)
         return 0;

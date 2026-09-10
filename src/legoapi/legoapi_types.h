@@ -1794,8 +1794,8 @@ struct HINT_s {
     f32 display_duration; // 0x0c; zero has no timed cancellation
     f32 repeat_delay;     // 0x10
     union {
-        u8 pad_0x14[4];
         i32 (*availability_fn)(HINT_s *);
+        u8 pad_0x14[4];
     };
     void (*on_display)(HINT_s *); // 0x18
     u8 completion_flags[4];       // 0x1c
@@ -1847,7 +1847,33 @@ struct HINTUIBUTTON_s {
 };
 DECOMP_ASSERT(sizeof(HINTUIBUTTON_s) == 0xa8, "HINTUIBUTTON_s size");
 DECOMP_ASSERT(offsetof(HINTUIBUTTON_s, field_0x7c) == 0x7c, "HINTUIBUTTON_s pending hint offset");
-struct HOTHBATTLE_MELEE_s {};
+struct HOTHBATTLE_MELEE_WAVE_s {
+    i32 field_0x0;
+    i16 character_id;
+    u8 reserved_06[2];
+    GameObject_s *creatures[4];
+    u8 field_0x18;
+    u8 field_0x19;
+    u8 reserved_1a;
+    char name[0xd];
+};
+DECOMP_ASSERT(sizeof(HOTHBATTLE_MELEE_WAVE_s) == 0x28, "HOTHBATTLE_MELEE_WAVE_s ABI");
+
+struct HOTHBATTLE_MELEE_s {
+    u8 field_0x0;
+    u8 field_0x1;
+    u8 field_0x2;
+    u8 field_0x3;
+    i8 field_0x4;
+    u8 field_0x5[3];
+    HOTHBATTLE_MELEE_WAVE_s waves[4];
+    u8 reserved_0xa8[0x1c];
+    u8 creature_count;
+    u8 reserved_0xc5[3];
+};
+DECOMP_ASSERT(sizeof(HOTHBATTLE_MELEE_s) == 0xc8, "HOTHBATTLE_MELEE_s ABI");
+DECOMP_ASSERT(offsetof(HOTHBATTLE_MELEE_s, waves[0].creatures) == 0x10, "HOTHBATTLE melee creature offset");
+DECOMP_ASSERT(offsetof(HOTHBATTLE_MELEE_s, creature_count) == 0xc4, "HOTHBATTLE melee count offset");
 struct HashRedirect;
 struct LANGUAGEDATA {
     i32 language;   // 0x00
@@ -3121,6 +3147,7 @@ struct pushblock_s {
             };
         };
         u8 state_flags[4];
+        u32 packed_state_flags;
     };
     union {
         u16 completion_flags; // 0xcc
@@ -3225,7 +3252,10 @@ DECOMP_ASSERT(sizeof(shopitem_s) == 0x74, "shopitem_s size");
 DECOMP_ASSERT(offsetof(shopitem_s, item_id) == 0x60, "shopitem_s item-id offset");
 DECOMP_ASSERT(offsetof(shopitem_s, special) == 0x68, "shopitem_s special offset");
 struct specialsfx_s;
-struct speedup_s {};
+struct speedup_s {
+    f32 distance;
+    f32 speed;
+};
 struct starfighter_s {};
 struct terrsitu_s {};
 struct uv1deb {};
@@ -3883,8 +3913,17 @@ struct GIZOBSTACLE_s {
     u8 trigger_mode;  // 0x92
     u8 field_0x93;
     MechObjectInterface *mech_object_interface; // 0x94
-    u8 progress_flags;                          // 0x98, persisted by GizObstacles progress data
-    u8 control_flags;                           // 0x99, GIZOBSTACLE_CONTROL_FLAGS
+    union {
+        u8 progress_flags; // 0x98, persisted by GizObstacles progress data
+        struct {
+            u8 progress_enabled : 1;
+            u8 progress_visible : 1;
+            u8 progress_external_control : 1;
+            u8 progress_push_control : 1;
+            u8 progress_reserved : 4;
+        };
+    };
+    u8 control_flags; // 0x99, GIZOBSTACLE_CONTROL_FLAGS
     u8 field_0x9a[2];
     i32 proximity_output; // 0x9c
     u8 runtime_flags;     // 0xa0, GIZOBSTACLE_RUNTIME_FLAGS
@@ -4056,17 +4095,17 @@ struct GIZPANEL_s {
     };
     GIZPANEL_DRAW_FLAGS draw_flags; // 0x69
     u8 field_0x6a[2];
-    NUVEC floor_position;  // 0x6c
-    NUVEC target_offset;   // 0x78
-    u16 target_x_rotation; // 0x84
-    u16 target_y_rotation; // 0x86
-    u16 arm_x_rotation;    // 0x88
-    u16 target_pitch;      // 0x8a
-    u16 target_roll;       // 0x8c
-    i16 platform_id;       // 0x8e
-    f32 activation_time;   // 0x90
-    f32 target_scale;      // 0x94
-    u8 field_0x98[4];
+    NUVEC floor_position;                       // 0x6c
+    NUVEC target_offset;                        // 0x78
+    u16 target_x_rotation;                      // 0x84
+    u16 target_y_rotation;                      // 0x86
+    u16 arm_x_rotation;                         // 0x88
+    u16 target_pitch;                           // 0x8a
+    u16 target_roll;                            // 0x8c
+    i16 platform_id;                            // 0x8e
+    f32 activation_time;                        // 0x90
+    f32 target_scale;                           // 0x94
+    MechObjectInterface *mech_object_interface; // 0x98
 
     void ClearMechObjectInterface();
     void GetMechObjectInterface();
@@ -4179,9 +4218,9 @@ struct GIZTURRET_s {
     i16 field_0x134;
     u8 field_0x136[2];
     i16 field_0x138;
-    u8 flags;         // 0x13a
-    u8 runtime_flags; // 0x13b
-    u8 field_0x13c[4];
+    u8 flags;                                   // 0x13a
+    u8 runtime_flags;                           // 0x13b
+    MechObjectInterface *mech_object_interface; // 0x13c
     f32 field_0x140;
     void ClearMechObjectInterface();
     void GetMechObjectInterface();
@@ -4295,7 +4334,8 @@ struct HATMACHINE_s {
         f32 idle_bounce_timer;
         f32 blink_timer;
     }; // 0x9c
-    u8 reserved_a0[8];
+    u8 reserved_a0[4];
+    MechObjectInterface *mech_object_interface; // 0xa4
 
     void ClearMechObjectInterface();
     void GetMechObjectInterface();
@@ -4314,12 +4354,34 @@ struct HATMACHINESYS_s {
     HATMACHINE_s *machines; // 0x0c
 };
 DECOMP_ASSERT(sizeof(HATMACHINESYS_s) == 0x10, "HATMACHINESYS_s ABI");
+struct HudRadarPulseStage {
+    i32 angle;
+    f32 radius;
+    f32 speed;
+    f32 delay;
+    u8 delay_finished;
+    u8 finished;
+    u8 reserved_12[2];
+};
+DECOMP_ASSERT(sizeof(HudRadarPulseStage) == 0x14, "HudRadarPulseStage ABI");
+
 struct HudRadarPulse {
     HudRadarPulse(VuVec const &);
-    void IsFinished();
+    i32 IsFinished();
     void Process(float);
     void Render();
+
+    HudRadarPulseStage pulses[3];
+    VuVec position;
+    u8 active;
+    u8 paused;
+    u8 reserved_4e[2];
 };
+DECOMP_ASSERT(offsetof(HudRadarPulse, pulses) == 0x00, "HudRadarPulse::pulses ABI");
+DECOMP_ASSERT(offsetof(HudRadarPulse, position) == 0x3c, "HudRadarPulse::position ABI");
+DECOMP_ASSERT(offsetof(HudRadarPulse, active) == 0x4c, "HudRadarPulse::active ABI");
+DECOMP_ASSERT(offsetof(HudRadarPulse, paused) == 0x4d, "HudRadarPulse::paused ABI");
+DECOMP_ASSERT(sizeof(HudRadarPulse) == 0x50, "HudRadarPulse ABI");
 enum LEVER_FLAGS : u16 {
     LEVER_FLAG_INTERACTING = 0x0001,
     LEVER_FLAG_BEING_PULLED = 0x0002,
@@ -4384,9 +4446,15 @@ DECOMP_ASSERT(offsetof(LEVER_s, floor_position) == 0x44, "LEVER movement target 
 DECOMP_ASSERT(offsetof(LEVER_s, name) == 0x5c, "LEVER name offset");
 DECOMP_ASSERT(offsetof(LEVER_s, position) == 0x6c, "LEVER position offset");
 DECOMP_ASSERT(offsetof(LEVER_s, flags) == 0x9c, "LEVER flags offset");
+struct LevelEditorScene {
+    u8 data[0xa8];
+};
+DECOMP_ASSERT(sizeof(LevelEditorScene) == 0xa8, "LevelEditorScene ABI");
+
 struct LevelEditor {
     u8 pad_0x000[0x2a0];
     i32 reset_pending;
+    LevelEditorScene scenes[10]; // 0x2a4
 
     void AddInfoText(char *);
     void AddScene(char *, nugscn_s *, i32);
@@ -4403,7 +4471,7 @@ struct LevelEditor {
     void Exit();
     void FindSceneId(char *);
     void Flush();
-    void GetEdScene(i32);
+    LevelEditorScene *GetEdScene(i32);
     void GetScene(char *);
     void GetScene(i32);
     void Initalise(variptr_u &, variptr_u &, i32);
@@ -4425,6 +4493,7 @@ struct LevelEditor {
     void WriteStream(EdFileOutputStream &);
 };
 DECOMP_ASSERT(offsetof(LevelEditor, reset_pending) == 0x2a0, "LevelEditor reset_pending offset");
+DECOMP_ASSERT(offsetof(LevelEditor, scenes) == 0x2a4, "LevelEditor scenes offset");
 struct MemoryManager {
     usize cursor;
     usize end;
@@ -4824,10 +4893,15 @@ struct SpecialObject {
     SpecialObject();
 };
 struct TELEPORT_s {
-    u8 reserved_00[0x4e];
+    u8 reserved_00[0x40];
+    struct nugspline_s *path;
+    u8 reserved_44[4];
+    f32 range_squared;
+    u16 flags;
     u8 enabled;
     u8 active;
-    u8 reserved_50[0x24];
+    nuhspecial_s blocking_special;
+    u8 reserved_5c[0x18];
     u16 field_74;
     u16 field_76;
     u16 field_78;
@@ -4908,7 +4982,11 @@ struct ThingManager {
     u32 field_0x10;     // 0x10 high-water cursor (written by the ctor / AllocPool)
     i32 field_0x14;     // 0x14 AddThingAfterThis reservation, folded in by the next AddThing
     void *timebar;      // 0x18 NuTimeBarCreateSet handle (profiling, stubbed)
+    u32 field_0x1c;
+    i32 ed_timing_state; // 0x20 editor timing selection state
 };
+DECOMP_ASSERT(sizeof(ThingManager) == 0x24, "ThingManager ABI");
+DECOMP_ASSERT(offsetof(ThingManager, ed_timing_state) == 0x20, "ThingManager timing state offset");
 // GameThingManager shares the base vtable entries (only the dtors differ) and
 // registers itself in theGameThings (ctor @0x4e8b00 / D1 dtor @0x4e8a80).
 struct GameThingManager : ThingManager {

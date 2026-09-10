@@ -130,6 +130,19 @@ extern "C" {
     extern i32 edpp_page_on[8];
     extern i32 edpp_instances_used;
     extern u32 partseed;
+
+    void NuPartEnableRayCasts(i32 enabled) {
+        part_raycasts_enabled = enabled;
+    }
+
+    u32 NuPartGetSeed(void) {
+        return partseed;
+    }
+
+    void NuPartSetSeed(i32 seed) {
+        partseed = static_cast<u32>(seed);
+    }
+
     extern part_type_s part_types[128];
     extern part_emit_s part_emits[512];
     extern i32 part_emits_used;
@@ -254,7 +267,7 @@ i32 CannotKill(GameObject_s *);
 i32 ObjHitObj(GameObject_s *, GameObject_s *, i32, u16, i32, i32);
 void NewRumble(nupad_s *, f32, i32);
 
-static __used__ void PartCollide(PART_s *part, i32 three_dimensional) {
+static void PartCollide(PART_s *part, i32 three_dimensional) {
     const NUVEC minimum = {part->position.x - part->field_0e4, part->position.y - part->field_0e4,
                            part->position.z - part->field_0e4};
     const NUVEC maximum = {part->position.x + part->field_0e4, part->position.y + part->field_0e4,

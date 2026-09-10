@@ -3489,10 +3489,23 @@ CABLE_s cables[8];
 CABLE_s *GameObjIsCableTied(GameObject_s *object) {
     if (cables[0].target != object)
         return NULL;
-    for (i32 i = 0; i < 8; ++i) {
-        if ((cables[i].flags_1e9 & 1) != 0)
-            return &cables[i];
-    }
+
+    if ((cables[0].flags_1e9 & 1) != 0)
+        return &cables[0];
+    if ((cables[1].flags_1e9 & 1) != 0)
+        return &cables[1];
+    if ((cables[2].flags_1e9 & 1) != 0)
+        return &cables[2];
+    if ((cables[3].flags_1e9 & 1) != 0)
+        return &cables[3];
+    if ((cables[4].flags_1e9 & 1) != 0)
+        return &cables[4];
+    if ((cables[5].flags_1e9 & 1) != 0)
+        return &cables[5];
+    if ((cables[6].flags_1e9 & 1) != 0)
+        return &cables[6];
+    if ((cables[7].flags_1e9 & 1) != 0)
+        return &cables[7];
     return NULL;
 }
 
@@ -4877,6 +4890,22 @@ i32 Game_Exit(i32) {
     return 0;
 }
 
+LEVELDATA_s *CanSaveAndExit(WORLDINFO_s *world) {
+    extern i32 GAMEDEMO;
+    extern i32 SuperStory;
+    extern i32 ChallengeMode;
+    extern i32 Arcade;
+
+    if (GAMEDEMO == 0 && SuperStory == 0 && world->area != NULL && world->area != HUB_ADATA &&
+        (world->area->flags & 0x146) == 0 && Mission_Active(NULL) == NULL && ChallengeMode == 0 && Arcade == 0 &&
+        CutScenePlayer_Active() == NULL && Game_AreaSave != NULL &&
+        Game_AreaSave[world->level_sub_id].area_complete != 0 && AreaGlobals.values.field_0x18 > 0) {
+        return Area_FindStatusLevel(world->area, NULL);
+    }
+
+    return NULL;
+}
+
 void GameObject_s::ClearAddons() {
     delete addons;
     addons = NULL;
@@ -4912,6 +4941,14 @@ bool GameObject_s::IsRunningTaskType(HashedKey const &type) {
 }
 
 void GameObject_s::KillTasks() {
+    MechTouchTask *task = touch_task;
+    while (task != NULL) {
+        MechTouchTask *next = task->next;
+        task->OnStop();
+        delete task;
+        task = next;
+    }
+    touch_task = NULL;
 }
 
 // ThingManager::AddThing @0x424c10. Appends at count; the pending
@@ -5158,6 +5195,7 @@ void ThingManager::edTimingEnter() {
 }
 
 void ThingManager::edTimingInit() {
+    static_cast<ThingManager *>(theThingManager)->ed_timing_state = 0;
 }
 
 void ThingManager::edTimingProc(float, nupad_s *) {
@@ -7407,10 +7445,6 @@ void FindNearestGameObject(nuvec_s *, GameObject_s *, u32, float, float, i32, i3
                            i32 (*)(GameObject_s *), bool) {
 }
 
-void SetAllInstancesHidden(nugscn_s *) {
-    memset(PortalVisiFlags, 0, sizeof(PortalVisiFlags));
-}
-
 extern "C" {
     extern debris_chunk_control_s *debris_chunk_control_stack[2];
     extern debris_chunk_control_s **freechunkcontrols;
@@ -7432,26 +7466,30 @@ void RemoveAnyChunkControls(i32 *chunk) {
 }
 
 void RemoveChunkFromRenderStack(particlechunkrendertype_s *chunk, particlechunkrendertype_s **stack) {
-    if (chunk->previous != NULL) {
+    if (*stack == chunk) {
+        particlechunkrendertype_s *next = chunk->next;
+        *stack = next;
+        if (next != NULL) {
+            next->previous = NULL;
+        }
+    } else if (chunk->previous != NULL) {
         chunk->previous->next = chunk->next;
-    } else if (*stack == chunk) {
-        *stack = chunk->next;
-    }
-    if (chunk->next != NULL) {
-        chunk->next->previous = chunk->previous;
+        if (chunk->next != NULL) {
+            chunk->next->previous = chunk->previous;
+        }
     }
     chunk->previous = NULL;
     chunk->next = NULL;
 }
 
 void RemoveChunkControlFromStack(debris_chunk_control_s *control, debris_chunk_control_s **stack) {
-    debris_chunk_control_s *current = *stack;
-    while (current != NULL && current != control) {
-        stack = &current->next;
-        current = current->next;
-    }
-    if (current == control) {
-        *stack = control->next;
+    debris_chunk_control_s **link = stack;
+    while (*link != NULL) {
+        if (*link == control) {
+            *link = control->next;
+            break;
+        }
+        link = &(*link)->next;
     }
     control->next = NULL;
 }

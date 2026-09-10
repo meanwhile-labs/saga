@@ -1,5 +1,7 @@
 #include "MechInputTouch_types.h"
 
+#include <string.h>
+
 #include "gameapi/gui/apimenu.h"
 #include "gameframework/saveload.h"
 #include "globals.h"
@@ -67,15 +69,11 @@ bool MechTouchUI::AddUIElement(MechTouchUIElement &element) {
 
 void MechTouchUI::Init() {
     MechSystems *systems = MechSystems::Get();
-    MechInputTouchGestureTrackingSystem *tracking =
-        reinterpret_cast<MechInputTouchGestureTrackingSystem *>(reinterpret_cast<u8 *>(systems) + 0x84);
-    tracking->RegisterGestureTracker(*this, 100);
+    systems->gesture_tracking_system.RegisterGestureTracker(*this, 100);
 }
 
 MechTouchUI::MechTouchUI() {
-    for (i32 i = 0; i < 32; ++i) {
-        elements[i] = NULL;
-    }
+    memset(elements, 0, sizeof(elements));
 }
 
 bool MechTouchUI::OnClick(GameObject_s &, TouchHolder &holder) {
@@ -425,12 +423,41 @@ void MechTouchUIPlayerButton::TriggerTagNext() {
 }
 
 void MechTouchUIPartySelector::BlendOut() {
+    field_0x88 = 1;
+    for (i32 i = 0; i < 32; ++i) {
+        MechTouchUICharIcon *icon = icons[i];
+        if (icon != NULL) {
+            icon->field_0x45 = 1;
+            bool selected = icon->hovered != 0 && icon->disabled == 0;
+            f32 delay = selected ? 0.4f : 0.0f;
+            icon->selected = selected;
+            icon->alpha_start = *icon->alpha_target;
+            icon->alpha_end = 0.0f;
+            icon->alpha_elapsed = 0.0f;
+            icon->alpha_duration = 0.3f;
+            icon->alpha_delay = delay;
+        }
+    }
 }
 
-void MechTouchUIPartySelector::BlendedOut() {
+bool MechTouchUIPartySelector::BlendedOut() {
+    if (field_0x88 == 0)
+        return false;
+    for (i32 i = 0; i < 32; ++i) {
+        if (icons[i] != NULL && icons[i]->icon_alpha > 0.001f)
+            return false;
+    }
+    return true;
 }
 
 void MechTouchUIPartySelector::Cleanup() {
+    for (i32 i = 0; i < 32; ++i) {
+        if (icons[i] != NULL) {
+            MechSystems::Get()->TouchUI().RemoveUIElement(*icons[i]);
+            delete icons[i];
+            icons[i] = NULL;
+        }
+    }
 }
 
 MechTouchUIPartySelector::MechTouchUIPartySelector(MechTouchUIPlayerButton &, i32 *) {

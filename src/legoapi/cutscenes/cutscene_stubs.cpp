@@ -84,7 +84,10 @@ extern "C" {
         NuSound3ResumeStereoStream(1 - music->primary_stream);
     }
 
-    void SetForceScenePlayBack(void) {
+    u8 ForceScenePlayBack;
+
+    void SetForceScenePlayBack(i32 enabled) {
+        ForceScenePlayBack = static_cast<u8>(enabled);
     }
 
     void instCutSceneTimeElapsed(void) {
@@ -110,7 +113,8 @@ extern "C" {
     void instNuGCutSceneCalculateAverageCentre(void) {
     }
 
-    void instNuGCutSceneChain(void) {
+    void instNuGCutSceneChain(instNUGCUTSCENE_s *instance, instNUGCUTSCENE_s *next) {
+        instance->chained_instance = next;
     }
 
     void instNuGCutSceneCharGetStartMtx(void) {
@@ -159,7 +163,8 @@ extern "C" {
     void instNuGCutSceneRotateY(void) {
     }
 
-    void instNuGCutSceneSetEndCallback(void) {
+    void instNuGCutSceneSetEndCallback(instNUGCUTSCENE_s *instance, void (*callback)(instNUGCUTSCENE_s *)) {
+        instance->end_callback = callback;
     }
 
     void instNuGCutSceneSetMtx(instNUGCUTSCENE_s *instance, NUMTX *matrix) {

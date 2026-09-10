@@ -62,8 +62,9 @@ template <class T, i32 Tag> class NuMechPtr {
             if (next == this) {
                 object->managed_links = NULL;
             } else {
-                next->previous = previous;
-                previous->next = next;
+                NuMechPtr *previous_link = previous;
+                next->previous = previous_link;
+                previous_link->next = next;
                 if (object->managed_links == this)
                     object->managed_links = next;
             }
@@ -76,15 +77,17 @@ template <class T, i32 Tag> class NuMechPtr {
   private:
     void Attach(T *value) {
         if (value != NULL) {
-            previous = value->managed_links;
-            if (previous == NULL) {
+            NuMechPtr *head = value->managed_links;
+            if (head == NULL) {
                 value->managed_links = this;
                 next = this;
                 previous = this;
             } else {
-                next = previous->next;
-                previous->next = this;
-                next->previous = this;
+                NuMechPtr *first = head->next;
+                previous = head;
+                next = first;
+                head->next = this;
+                first->previous = this;
             }
             object = value;
         }
