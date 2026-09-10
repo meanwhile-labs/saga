@@ -23,6 +23,9 @@
 #include "nu2api/nu3d/nuhspecial.h"
 #include "nu2api/numath/nurand.h"
 #include "gameapi/ai/aisys/aipath.h"
+#include "gameapi/ai/aisys/aisys.h"
+#include "nu2api/nu3d/nuspline.h"
+#include "nu2api/numath/nuang.h"
 #include "legoapi/characters/core/character.h"
 #include "legoapi/characters/motion.h"
 #include "legoapi/world/mission.h"
@@ -59,6 +62,9 @@ extern "C" {
 i32 OnOrInsidePlane(nuvec_s *point, nuvec_s *plane_point, nuvec_s *plane_normal, nuvec_s *corrected_point,
                     f32 normal_offset, f32 *distance_out);
 void RemoveGameObject(GameObject_s *object, i32 immediate);
+void ClearAICreatures();
+// Defined in gameapi/edtools/edtoolsall.cpp, which has no header yet.
+nugspline_s *edSpline_SplineFind(nugscn_s *scene, char *name);
 
 // Jedi_B tuning and spawn tables (unmangled globals in the original).
 extern "C" {
@@ -69,6 +75,21 @@ extern "C" {
     f32 jedib_safe_r = 9.0f;
     i16 *JediB_playerids[3] = {&id_PADMECLAWED, &id_ANAKINPADAWAN, &id_OBIWANKENOBIJEDIMASTER};
     i32 jedib_n_active;
+    // Grid spacing of the initial spawn sweep, in world units.
+    f32 jedib_create_step_LowEnd = 3.0f;
+    f32 jedib_create_step_Normal = 2.0f;
+    // Distance from a goody at which its surrounding baddies are placed.
+    f32 jedib_proximity = 0.5f;
+    // Random jitter applied to each grid point.
+    f32 jedib_offset = 0.5f;
+    // Only grid points between these radii from the arena centre are used.
+    f32 jedib_inner = 3.0f;
+    f32 jedib_outer_r = 8.0f;
+    i32 jedib_max_baddies_per_goody = 3;
+    i32 jedib_min_baddies_per_goody = 1;
+    // Seed the arena's own random stream starts from, so a level lays out the same way each time.
+    u32 jedib_seed = 0x11;
+    void *jedib_netpacket;
 }
 
 // --- File-local statics (original _ZL... symbols; not renamed) ---------------
@@ -443,7 +464,18 @@ struct JEDIB_CREATURE_s {
     JEDIB_CREATURE_s *partner; // 0x18, opponent handed over when this slot has none
     AILOCATOR locator;         // 0x1c
     i32 field_0x58;            // 0x58
-    u8 flags;                  // 0x5c, JEDIB_CREATURE_FLAGS
+    // 0x5c. The bits are written individually (the original stores them as
+    // bitfields); `flags` with JEDIB_CREATURE_FLAGS masks is for combined tests.
+    union {
+        u8 flags;
+        struct {
+            u8 spawned_behind : 1;
+            u8 random_type : 1;
+            u8 two_row_hp : 1;
+            u8 in_wave : 1;
+            u8 released : 1;
+        };
+    };
     u8 pad_0x5d[3];
 };
 DECOMP_ASSERT(sizeof(JEDIB_CREATURE_s) == 0x60, "JEDIB_CREATURE_s ABI");
@@ -471,7 +503,7 @@ struct JEDIB_s {
     i16 phase;                           // 0x6304
     i16 state;                           // 0x6306
     f32 timer;                           // 0x6308
-    i32 field_0x630c;                    // 0x630c
+    u32 seed;                            // 0x630c
     nuhspecial_s hero_spawns[3][4];      // 0x6310
     GameObject_s *heroes[3];             // 0x63a0
     GIZAIMESSAGE_s *msg_phase;           // 0x63ac
@@ -524,15 +556,234 @@ static JEDIB_PHASE_s jedi_b_phase3[8] = {
     {&id_DROIDEKA, "phase_droids"},         {NULL, NULL},
 };
 
+// Pushes `position` out of any antinode it falls inside, then resolves it to a
+// path point and fills in `locator` for it. Returns 0 when the point is off the
+// arena or off the path network.
+static i32 JediBInitLocator(WORLDINFO_s *world, nuvec_s *position, i32 angle, AILOCATOR *locator, f32 radius) {
+    if (netclient != 0) {
+        return 0;
+    }
+    if (world->ai_sys != NULL) {
+        i32 count = world->ai_sys->antinode_count;
+        AIANTINODE *node = world->ai_sys->antinodes;
+        for (i32 index = 0; index < count; index++, node++) {
+            if (node->radius != 0.0f) {
+                f32 dx = position->x - node->position.x;
+                f32 dz = position->z - node->position.z;
+                f32 dist_sqr = dx * dx + dz * dz;
+                f32 r = node->radius + 1.0f;
+                if (dist_sqr < r * r) {
+                    f32 scale = r / NuFsqrt(dist_sqr);
+                    position->x = node->position.x + dx * scale;
+                    position->z = node->position.z + dz * scale;
+                    break;
+                }
+            }
+        }
+    }
+    memset(locator, 0, sizeof(AILOCATOR));
+    if (!(position->x * position->x + position->z * position->z < radius * radius)) {
+        return 0;
+    }
+    f32 floor_y = GameShadow(NULL, position, 5.0f, 0);
+    if (floor_y != 2000000.0f) {
+        position->y = floor_y;
+    }
+    AISysGetPathPos(world->ai_sys, position, &locator->path_info, NULL, 0xff);
+    if ((locator->path_info.flags & AIPATHINFO_FLAG_ON_PATH) == 0) {
+        return 0;
+    }
+    locator->position = *position;
+    locator->direction = angle;
+    return 1;
+}
+
 // Killed-object callback installed on every generated Jedi_B combatant
 // (original _ZL19JediBKilledCallbackP12GameObject_s).
-static void JediBKilledCallback(GameObject_s *) {
+static void JediBKilledCallback(GameObject_s *object) {
+    i32 index;
+    if (object == NULL) {
+        return;
+    }
+    for (index = 0; index < jedi_b.goody_count; index++) {
+        if (jedi_b.goodies[index].object == object) {
+            jedi_b.goodies[index].object = NULL;
+            i32 alive = 0;
+            for (i32 other = 0; other < jedi_b.goody_count; other++) {
+                if (jedi_b.goodies[other].object != NULL) {
+                    alive++;
+                }
+            }
+            if (alive == 0) {
+                jedi_b.goody_count = 0;
+            }
+            return;
+        }
+    }
+    for (index = 0; index < jedi_b.baddie_count; index++) {
+        if (jedi_b.baddies[index].object == object) {
+            // Low-end levels only run the first four waves.
+            i32 wave;
+            for (wave = 0; wave < 6; wave++) {
+                if (g_lowEndLevelBehaviour != 0 && wave >= 4) {
+                    break;
+                }
+                if (jedi_b.wave_ids[wave] == jedi_b.baddies[index].id && jedi_b.wave_spawned[wave] == 0) {
+                    jedi_b.wave_spawned[wave] = 1;
+                    jedi_b.wave_timer = 0.0f;
+                    break;
+                }
+            }
+            jedi_b.baddies[index].object = NULL;
+            jedi_b.baddies[index].spawned_behind = 1;
+            jedi_b.baddies[index].in_wave = 0;
+            jedi_b.baddies[index].released = 0;
+            JEDIB_CREATURE_s *baddie = &jedi_b.baddies[index];
+            if (baddie->random_type != 0) {
+                if (FreePlay == 0 && (jedi_b.unique_spawned & 1) == 0) {
+                    baddie->id = id_LUMINARA;
+                    jedi_b.unique_spawned |= 1;
+                } else if (FreePlay == 0 && (jedi_b.unique_spawned & 2) == 0) {
+                    baddie->id = id_SHAAKTI;
+                    jedi_b.unique_spawned |= 2;
+                } else if (NuRandFloat() < 0.5f) {
+                    baddie->id = id_BATTLEDROIDGEONOSIAN;
+                } else {
+                    baddie->id = id_GEONOSIAN;
+                }
+            } else {
+                baddie->id = id_BOB;
+            }
+            baddie->two_row_hp = 0;
+            baddie->in_wave = 0;
+            baddie->released = 0;
+            baddie->field_0x58 = 0;
+            return;
+        }
+    }
 }
 
-void JediB_Init(WORLDINFO_s *) {
+void JediB_Init(WORLDINFO_s *world) {
+    if (Mission_Active(MissionSys) != NULL) {
+        return;
+    }
+    memset(&jedi_b, 0, sizeof(jedi_b));
+    jedi_b.seed = jedib_seed;
+    jedib_netpacket = SetLevelHack(0x20);
+    if (netclient == 0) {
+        f32 step = jedib_create_step_Normal;
+        if (g_lowEndLevelBehaviour != 0) {
+            step = jedib_create_step_LowEnd;
+        }
+        for (f32 x = -jedib_outer_r; x <= jedib_outer_r; x += step) {
+            for (f32 z = -jedib_outer_r; z <= jedib_outer_r; z += step) {
+                nuvec_s position;
+                AILOCATOR locator;
+                position.x = jedib_offset - jedib_offset * 2.0f * NuRandFloatSeeded(&jedi_b.seed) + x;
+                position.y = 0.0f;
+                position.z = jedib_offset - jedib_offset * 2.0f * NuRandFloatSeeded(&jedi_b.seed) + z;
+                f32 dist_sqr = position.x * position.x + position.z * position.z;
+                if (dist_sqr < jedib_outer_r * jedib_outer_r && dist_sqr > jedib_inner * jedib_inner) {
+                    f32 floor_y = GameShadow(NULL, &position, 5.0f, 0);
+                    if (floor_y != 2000000.0f) {
+                        position.y = floor_y;
+                    }
+                    i32 angle = NuRandIntSeeded(&jedi_b.seed);
+                    if (JediBInitLocator(world, &position, angle, &locator, jedib_outer_r) != 0 &&
+                        jedi_b.baddie_count <= 255) {
+                        JEDIB_CREATURE_s *goody = &jedi_b.baddies[jedi_b.baddie_count++];
+                        goody->position = position;
+                        goody->locator = locator;
+                        goody->random_type = 0;
+
+                        // Ring the goody with baddies at jedib_proximity, evenly spaced from a
+                        // random starting angle.
+                        nuvec_s offset;
+                        offset.x = 0.0f;
+                        offset.y = 0.0f;
+                        offset.z = jedib_proximity;
+                        angle = NuRandIntSeeded(&jedi_b.seed);
+                        NuVecRotateY(&offset, &offset, NuRandIntSeeded(&jedi_b.seed));
+                        i32 count = NuRandIntSeeded(&jedi_b.seed) %
+                                        (jedib_max_baddies_per_goody - jedib_min_baddies_per_goody) +
+                                    jedib_min_baddies_per_goody;
+                        for (i32 index = 0; index < count && jedi_b.baddie_count <= 255; index++) {
+                            if (index != 0) {
+                                angle = NuAngAdd(angle, 0x10000 / count);
+                            }
+                            NuVecRotateY(&position, &offset, angle);
+                            NuVecAdd(&position, &position, &goody->position);
+                            if (JediBInitLocator(world, &position, angle, &locator, jedib_outer_r) != 0) {
+                                JEDIB_CREATURE_s *baddie = &jedi_b.baddies[jedi_b.baddie_count++];
+                                baddie->random_type = 1;
+                                baddie->position = position;
+                                baddie->locator = locator;
+                                baddie->partner = goody;
+                                baddie->angle = angle;
+                                goody->partner = baddie;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    nugspline_s *spline = edSpline_SplineFind(world->current_gscn, "teleport_01");
+    if (spline != NULL) {
+        spline->pts[0].y -= 0.35f;
+        spline->pts[1].y = spline->pts[0].y;
+    }
+    LevBlowUp[0] = GizmoBlowUp_FindByName(world, "Thermo_011");
 }
 
-void JediB_Reset(WORLDINFO_s *) {
+void JediB_Reset(WORLDINFO_s *world) {
+    if (Mission_Active(MissionSys) != NULL) {
+        return;
+    }
+    if (netclient != 0) {
+        return;
+    }
+    i32 index;
+    for (index = 0; index < jedi_b.baddie_count; index++) {
+        jedi_b.baddies[index].object = NULL;
+        jedi_b.baddies[index].spawned_behind = 0;
+        jedi_b.baddies[index].in_wave = 0;
+        jedi_b.baddies[index].released = 0;
+        jedi_b.baddies[index].id = -1;
+    }
+    for (index = 0; index < jedi_b.goody_count; index++) {
+        jedi_b.goodies[index].object = NULL;
+        jedi_b.goodies[index].spawned_behind = 0;
+    }
+    ClearAICreatures();
+    char name[32];
+    for (i32 hero = 0; hero < 3; hero++) {
+        sprintf(name, "pillar%d_01a", hero + 1);
+        NuSpecialFind(world->current_gscn, &jedi_b.hero_spawns[hero][0], name, 1);
+        sprintf(name, "pillar%d_01b", hero + 1);
+        NuSpecialFind(world->current_gscn, &jedi_b.hero_spawns[hero][1], name, 1);
+        sprintf(name, "pillar%d_01c", hero + 1);
+        NuSpecialFind(world->current_gscn, &jedi_b.hero_spawns[hero][2], name, 1);
+        sprintf(name, "pillar%d_01ba", hero + 1);
+        NuSpecialFind(world->current_gscn, &jedi_b.hero_spawns[hero][3], name, 1);
+        jedi_b.heroes[hero] = NULL;
+        if (FreePlay == 0) {
+            for (i32 slot = 0; slot < 8; slot++) {
+                if (Player[slot] != NULL && Player[slot]->id == *JediB_playerids[hero]) {
+                    jedi_b.heroes[hero] = Player[slot];
+                    break;
+                }
+            }
+        }
+    }
+    jedi_b.msg_phase = SetGizAIMessage(gizaimessagesys, "Phase", 0.0f, NULL);
+    jedi_b.msg_phase_complete = SetGizAIMessage(gizaimessagesys, "PhaseComplete", 0.0f, NULL);
+    jedi_b.msg_objectives_left = SetGizAIMessage(gizaimessagesys, "ObjectivesLeft", 0.0f, NULL);
+    jedi_b.msg_restrain[0] = SetGizAIMessage(gizaimessagesys, "RestrainPadme", 0.0f, NULL);
+    jedi_b.msg_restrain[1] = SetGizAIMessage(gizaimessagesys, "RestrainAnakin", 0.0f, NULL);
+    jedi_b.msg_restrain[2] = SetGizAIMessage(gizaimessagesys, "RestrainObiWan", 0.0f, NULL);
+    jedi_b.boss = NULL;
+    jedi_b.unique_spawned &= ~3;
 }
 
 void JediB_Update(WORLDINFO_s *world) {
