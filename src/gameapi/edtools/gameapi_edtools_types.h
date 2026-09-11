@@ -3,6 +3,7 @@
 #pragma once
 
 #include "nu2api/nucore/fixed_width.h"
+#include "nu2api/nucore/nuvuvec.hpp"
 #include "nu2api/numath/nuvec.h"
 
 struct ClassObjectList;
@@ -66,7 +67,23 @@ struct part_typedesc_s;
 union variptr_u;
 
 struct ClassObjectList;
-struct EdMember {};
+struct EdMember {
+    struct VTable {
+        void *(*get_member_object)(EdMember *, void const *);
+        void (*get_member_data)(EdMember *, void const *, i32, void *, i32);
+    };
+
+    VTable *vtable;
+    EdMember *next;
+    u32 reserved_08;
+    i32 type_id;
+    u8 reserved_10[8];
+    i32 array_size;
+    i32 class_marker;
+    u32 reserved_20;
+    u16 replication_group;
+    u16 reserved_26;
+};
 struct EdObjectNotifier {};
 struct EdSubSystem {
     virtual ~EdSubSystem();
@@ -154,6 +171,10 @@ struct EdBitControl {
     void cbSelectItem(eduimenu_s *, eduiitem_s *, u32);
 };
 struct EdClass {
+    u8 reserved_00[8];
+    EdMember *members;
+    u8 reserved_0c[0xc];
+
     void AddType(EdRef *);
     void CopyObject(void *, void *);
     void FindMember(EdMember *, void *, i32, i32);
@@ -225,13 +246,24 @@ struct EdFileOutputStream {
     void SerialiseBuffer(void *, i32, i32);
 };
 struct EdInputContext {
+    u8 reserved_00[0x48];
+    f32 current_time;
+    f32 repeat_window;
+    u8 held[40];
+    u8 pressed[40];
+    u8 released[40];
+    u8 repeated[40];
+    u8 cleared[40];
+    f32 values[40];
+    f32 repeat_times[40];
+
     void Clear(i32);
     EdInputContext();
-    void Get(i32);
-    void GetHold(i32);
-    void GetPress(i32);
-    void GetRelease(i32);
-    void GetRepeat(i32);
+    f32 Get(i32);
+    f32 GetHold(i32);
+    f32 GetPress(i32);
+    f32 GetRelease(i32);
+    f32 GetRepeat(i32);
     void Set(i32, float, float);
     void Update(nucamera_s *, nupad_s *, float, bool);
 };
@@ -308,6 +340,16 @@ struct EdRefSpline {
     void SetMemberData(void *, i32, void *, i32, i16 *);
 };
 struct EdRegistry {
+    u32 reserved_00;
+    EdType *types;
+    EdClass *classes;
+    u8 reserved_0c[0x10];
+    i32 type_count;
+    u32 reserved_20;
+    i32 class_count;
+    u32 reserved_28;
+    i32 object_count;
+
     void AddMapping(char *, char *);
     void AddObjectNotifier(EdObjectNotifier *);
     void ClassIFaceProcess(EdClass *, void *, EdInputContext &);
@@ -319,12 +361,12 @@ struct EdRegistry {
     void DestroyObject(EdClassInterface *, void *, i32, i32);
     void Flush();
     void GetClass(char *);
-    void GetClass(i32);
-    void GetClassId(EdClass *);
+    EdClass *GetClass(i32);
+    i32 GetClassId(EdClass *);
     void GetClassId(char *);
     void GetStreamClassMapping(EdStream &, i32 *, i32 &, i32);
     void GetType(char *);
-    void GetType(i32);
+    EdType *GetType(i32);
     void GetTypeId(char *);
     void Initialise(variptr_u &, variptr_u &, i32, i32, i32, i32);
     void MapName(char *);
@@ -384,8 +426,26 @@ struct EdSystem {
     void Reset();
 };
 struct EdType {
+    u32 reserved_00;
+    i32 size;
+    u32 reserved_08;
+
     void Serialise(EdStream &);
 };
+
+static_assert(sizeof(void *) != 4 || sizeof(EdClass) == 0x18, "EdClass 32-bit size");
+static_assert(sizeof(void *) != 4 || sizeof(EdType) == 0xc, "EdType 32-bit size");
+static_assert(sizeof(void *) != 4 || sizeof(EdMember) == 0x28, "EdMember 32-bit size");
+static_assert(sizeof(void *) != 4 || offsetof(EdRegistry, types) == 0x4,
+              "EdRegistry::types 32-bit offset");
+static_assert(sizeof(void *) != 4 || offsetof(EdRegistry, classes) == 0x8,
+              "EdRegistry::classes 32-bit offset");
+static_assert(sizeof(void *) != 4 || offsetof(EdRegistry, type_count) == 0x1c,
+              "EdRegistry::type_count 32-bit offset");
+static_assert(sizeof(void *) != 4 || offsetof(EdRegistry, class_count) == 0x24,
+              "EdRegistry::class_count 32-bit offset");
+static_assert(sizeof(void *) != 4 || offsetof(EdRegistry, object_count) == 0x2c,
+              "EdRegistry::object_count 32-bit offset");
 struct EdVectorControl {
     void AddMenuItem(eduimenu_s *, EdRef *, void *);
     void Destroy();
@@ -410,14 +470,19 @@ struct KnotHelper {
     void Render(void *, i32);
 };
 struct SplineHelper {
+    u8 reserved_0x00[8];
+    SplineObject *first_object;
+    u8 reserved_0x0c[4];
+    i32 object_count;
+
     void AddMenuItems(eduimenu_s *);
     void ClearLevel(i32);
     void CreateObject(void *, i32, i32);
     void DestroyObject(void *, i32);
     void Find(char *);
     void Find(char *, SplineObject **, i32);
-    void GetNextObject(void *);
-    void GetNumObjects();
+    void *GetNextObject(void *);
+    i32 GetNumObjects();
     void Initialise();
     void PostLoadInitialisation(MemoryBuffer *, MemoryBuffer *);
     void PreLoadInitialisation(MemoryBuffer *, MemoryBuffer *);
@@ -431,12 +496,21 @@ struct SplineHelper {
     void cbEdSplineSmoothSpline(eduimenu_s *, eduiitem_s *, u32);
 };
 struct SplineKnot {
+    SplineKnot *next;
+    u8 reserved_0x04[4];
+    VuVec position;
+
     void Smooth();
 };
 struct SplineKnotList {
-    void GetPoint(i32, VuVec &);
+    SplineKnot *first;
+
+    i32 GetPoint(i32, VuVec &);
 };
 struct SplineObject {
+    u8 reserved_0x00[4];
+    SplineObject *next;
+
     void Clone();
     void Draw(i32, i32, i32, float);
     void DropPoint(VuVec &);
@@ -447,17 +521,24 @@ struct SplineObject {
     void SmoothKnots();
 };
 struct SplinePointBlock {
+    SplinePointBlock *next;
+    u8 reserved_0x08[8];
+    i32 point_count;
+    VuVec *points;
+
     void Draw();
     SplinePointBlock();
     SplinePointBlock(i32);
     virtual ~SplinePointBlock();
 };
 struct SplinePointList {
+    SplinePointBlock *first;
+
     void AddPoint(VuVec &);
     void Clear();
     void Draw();
-    void GetNumPoints();
-    void GetPoint(i32, VuVec &);
+    i32 GetNumPoints();
+    i32 GetPoint(i32, VuVec &);
 };
 struct SplineTool {
     void Initialise(variptr_u &, variptr_u &, i32);

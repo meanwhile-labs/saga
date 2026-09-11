@@ -80,7 +80,7 @@ class NuThreadBase {
     void SetLocalStorage(u32 idx, void *storage);
 
     void SetDebugName(const char *name);
-    void GetDebugName() const;
+    const char *GetDebugName() const;
 
     void (*GetThreadFn() const)(void *);
     void *GetParam() const;
@@ -116,7 +116,7 @@ class NuThreadManager {
   public:
     i32 AllocTLS();
     NuThreadBase *GetCurrentThread();
-    void GetMainThread();
+    NuThread *GetMainThread();
     void FreeTLS(i32 idx);
 
     NuThread *CreateThread(void (*thread_fn)(void *), void *fn_arg, i32 priority, const char *name, i32 stack_size,

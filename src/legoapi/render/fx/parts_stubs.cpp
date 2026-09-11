@@ -34,6 +34,3 @@ extern "C" {
     }
 
 } // extern "C"
-
-void PartObjectInterface::GetRadius() const {
-}

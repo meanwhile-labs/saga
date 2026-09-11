@@ -142,6 +142,9 @@ extern "C" {
     NUGSCN *edanim_page_scene[8];
     i32 edanim_nearest;
     i32 edanim_nearest_param_id;
+    i32 edanim_nearest_particle;
+    i32 edanim_nearest_sound;
+    i32 edanim_particle_type;
     i32 edanim_sound_type;
     NUGSCN *edbits_base_scene;
     edbridge_s edBridges[64];
@@ -284,6 +287,10 @@ static edcam_s gp_cam = {
         EDCAM_FREEDOM_YAW | EDCAM_FREEDOM_DISTANCE,
     {0, 0, 0},
 };
+
+void edcamSetContoller(i32 invert_pitch) {
+    gp_cam.invert_pad_pitch = invert_pitch;
+}
 
 static NUCAMERA *edmaincam = NULL;
 static NUCAMERA *edinternalcam = NULL;

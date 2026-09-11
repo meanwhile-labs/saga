@@ -420,7 +420,30 @@ extern "C" void NuGScnFromVideoMem(NUGSCNVIDEOMEMFN callback) {
 }
 extern "C" void NuGScnReadForMultiRender(void) {
 }
-extern "C" void NuGScnRestoreTIDsPS(void) {
+extern "C" void NuGScnRestoreTIDsPS(NUGSCN *scene) {
+    if (scene->display_list == NULL) {
+        return;
+    }
+
+    for (i32 i = 0; i < scene->display_list->nitems; ++i) {
+        NUDISPLAYLISTITEM *item = &scene->display_list->items[i];
+        if (item->type == 0xb0) {
+            i32 *packet = static_cast<i32 *>(item->next);
+            if (packet[0] == 2) {
+                for (i32 texture = 0; texture < 3; ++texture) {
+                    packet[texture + 2] = NuGScnRestoreTID(scene, packet[texture + 2]);
+                }
+            }
+            packet[1] = NuGScnRestoreTID(scene, packet[1]);
+        } else if (item->type == 0xae || item->type == 0xaf) {
+            i32 *packet = static_cast<i32 *>(item->next);
+            if (packet != NULL) {
+                for (i32 texture = 0; texture < 3; ++texture) {
+                    packet[texture] = NuGScnRestoreTID(scene, packet[texture]);
+                }
+            }
+        }
+    }
 }
 extern "C" void NuGScnRndr(NUGSCN *scene) {
     if (scene->additional_scenes != NULL && scene->rendered_additional_scene_count > 0) {
@@ -969,19 +992,46 @@ extern "C" void NuRndrRect2di(i32 x, i32 y, i32 w, i32 h, i32 colour, numtl_s *m
     NuPrim2DAddXYZ(sx + sw, sy + sh, 0.0f);
     NuPrim2DEnd();
 }
-extern "C" void NuRndrRectUV2di(i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, u32 colour, numtl_s *mtl) {
+extern "C" void NuRndrRectUV2di(i32 x, i32 y, i32 w, i32 h, f32 u0, f32 v0, f32 u1, f32 v1, i32 colour, numtl_s *mtl) {
     const f32 sx = static_cast<f32>(x) * 0.0625f;
     const f32 sy = static_cast<f32>(y) * 0.0625f;
-    const f32 ex = sx + static_cast<f32>(w) * 0.0625f;
-    const f32 ey = sy + static_cast<f32>(h) * 0.0625f;
+    const f32 sw = static_cast<f32>(w) * 0.0625f;
+    const f32 sh = static_cast<f32>(h) * 0.0625f;
 
     NuPrim2DBegin(4, 7, mtl);
-    NuRndrPrimAttributes(colour, false, false);
-    NuRndrPrimUV(u0, v0);
+    u8 *vertex;
+    if (!g_NuPrim_NeedsHalfUVs) {
+        vertex = g_NuPrim_StreamBufferPtr->u8_ptr;
+        *reinterpret_cast<f32 *>(vertex + 0x10) = u0;
+        *reinterpret_cast<f32 *>(vertex + 0x14) = v0;
+    } else {
+        vertex = g_NuPrim_StreamBufferPtr->u8_ptr;
+        *reinterpret_cast<u16 *>(vertex + 0x10) = NuRndrFloatToHalf(u0);
+        *reinterpret_cast<u16 *>(vertex + 0x12) = NuRndrFloatToHalf(v0);
+    }
+    const char *needs_overbrightening = &g_NuPrim_NeedsOverbrightening;
+    i32 adjusted_colour = colour;
+    if (!*needs_overbrightening) {
+        adjusted_colour = ((colour >> 1) & 0x007f7f7f) | (colour & 0xff000000);
+    }
+    *reinterpret_cast<u32 *>(vertex + 0x0c) = adjusted_colour;
     NuPrim2DAddXYZ(sx, sy, 0.0f);
-    NuRndrPrimAttributes(colour, false, false);
-    NuRndrPrimUV(u1, v1);
-    NuPrim2DAddXYZ(ex, ey, 0.0f);
+
+    if (!g_NuPrim_NeedsHalfUVs) {
+        vertex = g_NuPrim_StreamBufferPtr->u8_ptr;
+        *reinterpret_cast<f32 *>(vertex + 0x10) = u1;
+        *reinterpret_cast<f32 *>(vertex + 0x14) = v1;
+    } else {
+        vertex = g_NuPrim_StreamBufferPtr->u8_ptr;
+        *reinterpret_cast<u16 *>(vertex + 0x10) = NuRndrFloatToHalf(u1);
+        *reinterpret_cast<u16 *>(vertex + 0x12) = NuRndrFloatToHalf(v1);
+    }
+    adjusted_colour = colour;
+    if (!*needs_overbrightening) {
+        adjusted_colour = ((colour >> 1) & 0x007f7f7f) | (colour & 0xff000000);
+    }
+    *reinterpret_cast<u32 *>(vertex + 0x0c) = adjusted_colour;
+    NuPrim2DAddXYZ(sx + sw, sy + sh, 0.0f);
     NuPrim2DEnd();
 }
 extern "C" i32 NuRndrSetAmbientLightPS(const NUCOLOUR3 *colour) {

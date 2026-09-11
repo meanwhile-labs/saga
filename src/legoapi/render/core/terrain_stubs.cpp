@@ -75,6 +75,9 @@ struct TERRAIN_PLATFORM_CALLBACK {
 static i32 PlatCodeCallback;
 static TERRAIN_PLATFORM_CALLBACK PlatCallback[8];
 extern "C" i32 DeletePlatinst(i32 platform_index);
+extern "C" PartHeader *CreateDmaPartEffectList(void *memory, i32 *size);
+extern "C" dma_particle_chunk_s *CreateDmaParticleSet(void *memory, i32 *size);
+extern "C" dma_particle_chunk_s *CreateDmaParticleSetGlass(void *memory, i32 *size);
 void ScanTerrIDRemovePlat(i32 platform_index);
 
 u8 TerrainHitInfo[4];
@@ -541,36 +544,17 @@ extern "C" {
     void AITerrShadowOnPlatform(void) {
     }
 
-    void CheckForPlatInst(void) {
-    }
-
-    PartHeader *CreateDmaPartEffectList(void *memory, i32 *size) {
-        *size = sizeof(PartHeader);
-        return reinterpret_cast<PartHeader *>(ALIGN(reinterpret_cast<usize>(memory), 0x10));
-    }
-
-    dma_particle_chunk_s *CreateDmaParticleSet(void *memory, i32 *size) {
-        dma_particle_chunk_s *chunk = static_cast<dma_particle_chunk_s *>(memory);
-        memset(chunk, 0, sizeof(*chunk));
-        chunk->command = 0x52;
-        for (i32 i = 0; i < 32; ++i) {
-            dma_particle_s &particle = chunk->particles[i];
-            particle.position.x = 1.0f;
-            particle.position.y = 2.0f;
-            particle.position.z = 3.0f;
-            particle.start_time = -1.0f;
-            particle.momentum.x = 4.0f;
-            particle.momentum.y = 5.0f;
-            particle.momentum.z = 6.0f;
-            particle.inverse_lifetime = 128.0f;
+    i32 CheckForPlatInst(i32 instance) {
+        if (CurTerr->max_platforms <= 0) {
+            return 0;
         }
-        chunk->end_command = 0;
-        *size = sizeof(*chunk);
-        return chunk;
-    }
-
-    dma_particle_chunk_s *CreateDmaParticleSetGlass(void *memory, i32 *size) {
-        return CreateDmaParticleSet(memory, size);
+        TERRAIN_PLATFORM *platform = CurTerr->platforms;
+        for (i32 i = 0; i < CurTerr->max_platforms; ++i, ++platform) {
+            if (platform->scene_object != NULL && static_cast<i16>(platform->scene_object_index) == instance) {
+                return 1;
+            }
+        }
+        return 0;
     }
 
     i32 CreateScaledEffect(i32 effect_index, f32 requested_scale) {
@@ -1060,14 +1044,39 @@ extern "C" {
 
     void DebrisOrientation(i32 handle, i16 z, i16 y) {
         if (handle != -1) {
-            debkeydatatype_s &key = debkeydata[handle];
-            NUMTX *mtx = &key.effect_orientation;
-            NuMtxSetIdentity(mtx);
-            NuMtxRotateZ(mtx, z);
-            NuMtxRotateY(mtx, y);
-            mtx->m30 = 0.0f;
-            mtx->m32 = 0.0f;
-            key.orientation_dirty = 0.0f;
+            NuMtxSetIdentity(&debkeydata[handle].effect_orientation);
+            NUMTX *mtx = &debkeydata[handle].effect_orientation;
+
+            const f32 cos_z = NU_COS_LUT(z);
+            const f32 sin_z = NU_SIN_LUT(z);
+            const f32 z_m00 = mtx->m00;
+            const f32 z_m10 = mtx->m10;
+            const f32 z_m20 = mtx->m20;
+            const f32 z_m30 = mtx->m30;
+            mtx->m00 = z_m00 * cos_z - mtx->m01 * sin_z;
+            mtx->m01 = z_m00 * sin_z + mtx->m01 * cos_z;
+            mtx->m10 = z_m10 * cos_z - mtx->m11 * sin_z;
+            mtx->m11 = z_m10 * sin_z + mtx->m11 * cos_z;
+            mtx->m20 = z_m20 * cos_z - mtx->m21 * sin_z;
+            mtx->m21 = z_m20 * sin_z + mtx->m21 * cos_z;
+            mtx->m30 = z_m30 * cos_z - mtx->m31 * sin_z;
+            mtx->m31 = z_m30 * sin_z + mtx->m31 * cos_z;
+
+            const f32 cos_y = NU_COS_LUT(y);
+            const f32 sin_y = NU_SIN_LUT(y);
+            const f32 y_m00 = mtx->m00;
+            const f32 y_m10 = mtx->m10;
+            const f32 y_m20 = mtx->m20;
+            const f32 y_m30 = mtx->m30;
+            mtx->m00 = y_m00 * cos_y + mtx->m02 * sin_y;
+            mtx->m02 = mtx->m02 * cos_y - y_m00 * sin_y;
+            mtx->m10 = y_m10 * cos_y + mtx->m12 * sin_y;
+            mtx->m12 = mtx->m12 * cos_y - y_m10 * sin_y;
+            mtx->m20 = y_m20 * cos_y + mtx->m22 * sin_y;
+            mtx->m22 = mtx->m22 * cos_y - y_m20 * sin_y;
+            mtx->m30 = y_m30 * cos_y + mtx->m32 * sin_y;
+            mtx->m32 = mtx->m32 * cos_y - y_m30 * sin_y;
+            debkeydata[handle].orientation_dirty = 0.0f;
         }
     }
 
@@ -1229,10 +1238,14 @@ extern "C" {
         DebrisCutSceneMode = enabled;
     }
 
-    void DebrisSetDetailLevels(void) {
+    void DebrisSetDetailLevels(i32 handle, i32 detail_levels) {
+        debkeydata[handle].field_1da = static_cast<u8>(detail_levels);
     }
 
-    void DebrisSetDrawFlag(void) {
+    void DebrisSetDrawFlag(i32 handle, i8 draw_flag) {
+        if (handle != -1) {
+            debkeydata[handle].field_2f7 = draw_flag;
+        }
     }
 
     void DebrisSetFacing(i32 handle, u8 enabled, i16 x_angle, i16 y_angle) {
