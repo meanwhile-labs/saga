@@ -796,10 +796,10 @@ extern "C" {
         return SockBitIsSet(sock, index);
     }
 
-    void SockOff(void) {
+    void SockOff(SOCKSYS *, i32) {
     }
 
-    void SockOn(void) {
+    void SockOn(SOCKSYS *, i32) {
     }
 
     void SockRotationMatrix(SOCKSYS *system, SOCKPOSITION *position, NUMTX *out, i32 stride, i32 mode) {
@@ -1476,22 +1476,14 @@ extern "C" {
 
 } // extern "C"
 
-extern f32 CurrentSpeed;
-extern f32 avg_currentspeed_mul;
-
-// Original: 237 bytes.
-f32 ForceAlongSock(GameObject_s *object) {
-    if (object->sock_position.location.sock == -1 || CurrentSpeed == 0.0f)
-        return 0.0f;
-    f32 speed = (1.0f + object->field_0xc38) * (CurrentSpeed * avg_currentspeed_mul);
-    NUVEC force = {0.0f, 0.0f, speed};
-    NuVecRotateX(&force, &force, object->sock_position.midpoint_rotation.x);
-    NuVecRotateY(&force, &force, object->sock_position.midpoint_rotation.y);
-    NuVecAdd(&object->target_velocity, &object->target_velocity, &force);
-    return speed;
-}
-
-void GetSockEdgeEnum(char *) {
+i32 GetSockEdgeEnum(char *name) {
+    if (NuStrICmp(name, const_cast<char *>("SIDE")) == 0) {
+        return 0;
+    }
+    if (NuStrICmp(name, const_cast<char *>("END")) == 0) {
+        return 1;
+    }
+    return -1;
 }
 
 void GoingForwardsAlongNarrowSock(GameObject_s *) {

@@ -8,6 +8,7 @@ char *ASCII_UP = "\xc2\xac";
 #include "nu2api/nu3d/nucamera.h"
 #include "nu2api/nu3d/nuqfnt.h"
 #include "nu2api/nu3d/nuprim.h"
+#include "nu2api/nu3d/nushader_plain.h"
 #include "nu2api/nucore/nustring.h"
 #include "nu2api/nufile/nufpar.h"
 #include "nu2api/numath/nufloat.h"
@@ -479,7 +480,6 @@ void Text_SetLanguage_Game(i32 language) {
     }
 }
 void Text3DStringEncodeFont(unsigned char *src, u16 *dst, void *font) {
-    static unsigned char missing_character[] = "\xe2\x96\xa1";
     u16 character;
 
     while (*src != 0) {
@@ -488,11 +488,12 @@ void Text3DStringEncodeFont(unsigned char *src, u16 *dst, void *font) {
             if (*src == 0)
                 break;
             src = NuUnicodeCharFromUTF8(&character, src);
+            continue;
         }
 
         *dst = NuQFntEncodeUnicodeChar(font, character);
         if (*dst == 0xffff) {
-            NuUnicodeCharFromUTF8(&character, missing_character);
+            NuUnicodeCharFromUTF8(&character, (unsigned char *)"\xe2\x96\xa1");
             *dst = NuQFntEncodeUnicodeChar(font, character);
             if (*dst == 0xffff)
                 *dst = NuQFntEncodeUnicodeChar(font, '?');
@@ -501,7 +502,32 @@ void Text3DStringEncodeFont(unsigned char *src, u16 *dst, void *font) {
     }
     *dst = 0;
 }
-void Text_ExpandButtonString(char *, char *) {
+i32 Text_ExpandButtonString(char *input, char *output) {
+    if (NuStrICmp(input, "[TAG]") == 0 || NuStrICmp(input, "[TRIANGLE]") == 0 || NuStrICmp(input, "[T]") == 0) {
+        strcpy(output, "[[y]]");
+        return 1;
+    }
+    if (NuStrICmp(input, "[SQUARE]") == 0 || NuStrICmp(input, "[S]") == 0 || NuStrICmp(input, "[ACTION]") == 0) {
+        strcpy(output, "[[x]]");
+        return 1;
+    }
+    if (NuStrICmp(input, "[CIRCLE]") == 0 || NuStrICmp(input, "[O]") == 0 || NuStrICmp(input, "[SPECIAL]") == 0) {
+        strcpy(output, "[[b]]");
+        return 1;
+    }
+    if (NuStrICmp(input, "[CROSS]") == 0 || NuStrICmp(input, "[X]") == 0 || NuStrICmp(input, "[JUMP]") == 0) {
+        strcpy(output, "[[a]]");
+        return 1;
+    }
+    if (NuStrICmp(input, "[TOGGLELEFT]") == 0) {
+        strcpy(output, "[[lb]]");
+        return 1;
+    }
+    if (NuStrICmp(input, "[TOGGLERIGHT]") == 0) {
+        strcpy(output, "[[rb]]");
+        return 1;
+    }
+    return 0;
 }
 void Text_InitDefaultStrings() {
 }
@@ -554,7 +580,53 @@ void Text_LocaliseDecimalPoint(char *text) {
         }
     }
 }
-void Text_ExpandAllButtonStrings(char *, char *) {
+void Text_ExpandAllButtonStrings(char *input, char *output) {
+    char token[256];
+    char expanded[64];
+
+    *output = '\0';
+    while (*input != '\0') {
+        if (*input != '[') {
+            *output = *input;
+            output[1] = '\0';
+            ++input;
+            ++output;
+            continue;
+        }
+
+        token[0] = '[';
+        i32 token_length = 1;
+        while (input[token_length] != ']' && input[token_length] != '\0') {
+            token[token_length] = input[token_length];
+            ++token_length;
+        }
+
+        char literal = '[';
+        if (input[token_length] != '\0') {
+            token[token_length] = ']';
+            token[token_length + 1] = '\0';
+            token_length = NuStrLen(token);
+            if (token_length > 0 && Text_ExpandButtonString(token, expanded) != 0) {
+                char *character = expanded;
+                while (*character != '\0') {
+                    *output = *character;
+                    output[1] = '\0';
+                    ++character;
+                    ++output;
+                }
+                NuStrCat(output, expanded);
+                input += token_length;
+                continue;
+            }
+            literal = *input;
+        }
+
+        *output = literal;
+        output[1] = '\0';
+        ++input;
+        ++output;
+    }
+    *output = '\0';
 }
 void Text_FillInExtendedSaveInfo() {
 }
@@ -588,20 +660,18 @@ extern "C" {
             game_font = QFont2D;
         if (button_font == nullptr)
             button_font = QFont2DButtons;
-        if (game_font == nullptr || button_font == nullptr)
-            return;
-
-        f32 scale = game_font->height / button_font->height;
-        vucharidx_s *game_map = static_cast<vucharidx_s *>(game_font->unicode_map);
-        vucharidx_s *button_map = static_cast<vucharidx_s *>(button_font->unicode_map);
-        VUFNTCHAR *game_glyphs = game_font->glyphs;
-        VUFNTCHAR *button_glyphs = button_font->glyphs;
-        for (i32 i = 0; i < button_font->unicode_count; i++) {
-            for (i32 j = 0; j < game_font->unicode_count; j++) {
-                if (button_map[i].unicode == game_map[j].unicode) {
-                    if (button_map[i].unicode >= 0x531 && button_map[i].unicode <= 0x53f)
-                        game_glyphs[game_map[j].index].width = button_glyphs[button_map[i].index].width * scale;
-                    break;
+        if (game_font != nullptr && button_font != nullptr) {
+            f32 scale = game_font->height / button_font->height;
+            for (i32 i = 0; i < button_font->glyph_count; i++) {
+                for (i32 j = 0; j < game_font->glyph_count; j++) {
+                    if (button_font->unicode_map[i].unicode == game_font->unicode_map[j].unicode) {
+                        if (button_font->unicode_map[i].unicode >= 0x531 &&
+                            button_font->unicode_map[i].unicode <= 0x53f) {
+                            game_font->glyphs[game_font->unicode_map[j].index].width =
+                                button_font->glyphs[button_font->unicode_map[i].index].width * scale;
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -897,7 +967,37 @@ extern "C" {
     void UnloadGameFont(void) {
     }
 }
-void LookupHash(u32, u32 *, HashRedirect *, u32) {
+bool LookupHash(u32 key, u32 *value, HashRedirect *redirects, u32 count) {
+    i32 upper = static_cast<i32>(count) - 1;
+    if (upper < 0) {
+        return false;
+    }
+
+    i32 index = upper / 2;
+    HashRedirect *redirect = &redirects[index];
+    if (redirect->key == key) {
+        *value = redirect->value;
+        return true;
+    }
+
+    i32 lower = 0;
+    while (true) {
+        if (key > redirect->key) {
+            lower = index + 1;
+        } else {
+            upper = index - 1;
+        }
+        if (lower > upper) {
+            return false;
+        }
+
+        index = (lower + upper) / 2;
+        redirect = &redirects[index];
+        if (redirect->key == key) {
+            *value = redirect->value;
+            return true;
+        }
+    }
 }
 void MultilineDump(char const *) {
 }

@@ -890,7 +890,19 @@ void MovePlayerSpline(GameObject_s *) {
 }
 
 i32 TwistLevel(LEVELDATA_s *level);
-f32 ForceAlongSock(GameObject_s *object);
+extern f32 CurrentSpeed;
+extern f32 avg_currentspeed_mul;
+
+f32 ForceAlongSock(GameObject_s *object) {
+    if (object->sock_position.location.sock == -1 || CurrentSpeed == 0.0f)
+        return 0.0f;
+    f32 speed = (1.0f + object->field_0xc38) * (CurrentSpeed * avg_currentspeed_mul);
+    NUVEC force = {0.0f, 0.0f, speed};
+    NuVecRotateX(&force, &force, object->sock_position.midpoint_rotation.x);
+    NuVecRotateY(&force, &force, object->sock_position.midpoint_rotation.y);
+    NuVecAdd(&object->target_velocity, &object->target_velocity, &force);
+    return speed;
+}
 
 // Original: 1,336 bytes.
 i32 MovePlayer_TWIST(GameObject_s *object) {
@@ -5075,7 +5087,23 @@ i32 SetObjTarget(GameObject_s *object, GameObject_s *target) {
     return 1;
 }
 
-void SnapPosTaken(WORLDINFO_s *, pushblock_s *, nuvec_s *, i32) {
+i32 SnapPosTaken(WORLDINFO_s *world, pushblock_s *, nuvec_s *position, i32 excluded_index) {
+    for (i32 i = 0; i < world->push_block_count; ++i) {
+        if (i == excluded_index) {
+            continue;
+        }
+        pushblock_s *block = &world->push_blocks[i];
+        if ((block->packed_state_flags & 0x02000300) == 0) {
+            continue;
+        }
+        const f32 dx = block->position->x - position->x;
+        const f32 dy = block->position->y - position->y;
+        const f32 dz = block->position->z - position->z;
+        if (dx * dx + dy * dy + dz * dz <= 0.0025f) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void StartFlatten(GameObject_s *source, GameObject_s *target) {
@@ -5179,7 +5207,13 @@ void UpdateMidPos(GIZMOBLOWUP_s *blowup) {
 void Hang_MoveCode(GameObject_s *) {
 }
 
-void HoldCode_Copy(GameObject_s *) {
+void HoldCode_Copy(GameObject_s *object) {
+    if (LEGOCONTEXT_HOLD != -1 && object->character_context == LEGOCONTEXT_HOLD) {
+        if (object->context_animation_timer > 0.0f)
+            object->context_animation_timer -= FRAMETIME;
+        else if ((object->pad_gamepad->buttons_held & GAMEPAD_ACTION) == 0)
+            object->character_context = -1;
+    }
 }
 
 void SetHeadTarget(GameObject_s *object, NUVEC *position, i8 priority, f32 time, f32 minimum_delay, f32 maximum_delay) {

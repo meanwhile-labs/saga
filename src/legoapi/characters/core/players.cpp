@@ -626,18 +626,6 @@ void PostResetCode(GameObject_s *obj) {
     }
 }
 
-static TORPEDOPACKET TorpedoPackets[16];
-
-TORPEDOPACKET *GetTorpedoPacket(void) {
-    for (i32 i = 0; i < 16; i++) {
-        if ((TorpedoPackets[i].field_0x1 & 1) == 0) {
-            TorpedoPackets[i].field_0x1 |= 1;
-            return &TorpedoPackets[i];
-        }
-    }
-    return NULL;
-}
-
 void SetHitPoints(GameObject_s *obj, i32 hp) {
     obj->current_hp = (u8)hp;
     if ((i8)hp > (i32)(u32)obj->hitpoints) {
@@ -770,7 +758,30 @@ i32 PlayerItem_GotAmmo(PLAYERITEM_s *item) {
     return 1;
 }
 
-i32 Players_AveragePos(nuvec_s *, SOCKPOSITION_s *) {
+i32 Players_AveragePos(nuvec_s *position, SOCKPOSITION_s *socket_position) {
+    NUVEC total = {0.0f, 0.0f, 0.0f};
+    f32 player_count = 0.0f;
+
+    if (Player[0] != NULL && static_cast<i8>(Player[0]->apiobj.field_0x1f8) < 0) {
+        NuVecAdd(&total, &total, &Player[0]->apiobj.position);
+        player_count += 1.0f;
+    }
+    if (Player[1] != NULL && static_cast<i8>(Player[1]->apiobj.field_0x1f8) < 0) {
+        NuVecAdd(&total, &total, &Player[1]->apiobj.position);
+        player_count += 1.0f;
+    }
+
+    if (player_count > 0.0f) {
+        NuVecScale(position, &total, 1.0f / player_count);
+        if (socket_position != NULL) {
+            ComplexSockPosition(WORLD->sock_sys, position, -1, -1, socket_position);
+        }
+        return 1;
+    }
+
+    if (socket_position != NULL) {
+        socket_position->location.sock = -1;
+    }
     return 0;
 }
 
@@ -1072,17 +1083,7 @@ static __used__ i32 SelectOpponent(GameObject_s *, f32, f32, i32, i32) {
 static __used__ void Player_ClearContext_Game(GameObject_s *, i32) {
 }
 
-static __used__ unsigned int CanStartHold_Game(GameObject_s *) {
-    return {};
-}
-
-static __used__ unsigned int CanPushBlocks_Game(GameObject_s *) {
-    return {};
-}
-
-static __used__ unsigned int CanPushObstacles_Game(GameObject_s *) {
-    return {};
-}
+u32 (*CanPushObstaclesFn)(GameObject_s *) = NULL;
 
 void KillPlayer(GameObject_s *, i32, i32, nuvec_s *) {
 }
@@ -1625,7 +1626,7 @@ void FindFurthestPlayerFromVec(nuvec_s *, GameObject_s **, float &, bool, u32) {
 
 void AveragePlayerCurrentSpeedMul() {
     avg_currentspeed_mul = 0.0f;
-    f32 total = 0.0f;
+    f32 total = avg_currentspeed_mul;
     i32 count = 0;
     if (Player[0] != NULL && (Player[0]->apiobj.flags_low & 0x80) != 0) {
         total += Player[0]->current_speed_mul;
@@ -1633,11 +1634,11 @@ void AveragePlayerCurrentSpeedMul() {
     }
     if (Player[1] != NULL && (Player[1]->apiobj.flags_low & 0x80) != 0) {
         total += Player[1]->current_speed_mul;
-        ++count;
+        if (count == 1) {
+            total *= 0.5f;
+        }
     }
     avg_currentspeed_mul = total;
-    if (count == 2)
-        avg_currentspeed_mul *= 0.5f;
 }
 
 void SetPlayer() {

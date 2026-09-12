@@ -37,7 +37,12 @@ struct eduiitem_s {
     eduiitem_s *next;
     eduiitem_s *previous;
     i32 type;
-    u8 unknown_0c[5];
+    union {
+        i32 data;
+        void *data_ptr;
+        u8 unknown_0c[4];
+    };
+    u8 unknown_10;
     union {
         u8 flags;
         struct {
