@@ -1,0 +1,4 @@
+# Use Ubuntu's interpreter inside this image. The downloaded x86_64
+# python-build-standalone runtime produces incorrect floating-point results
+# when Docker Desktop executes it through Rosetta on Apple silicon.
+common --extra_toolchains=@rules_python//python/runtime_env_toolchains:all
