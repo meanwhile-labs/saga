@@ -13,6 +13,14 @@ bazel_dep(name = "rules_python", version = "1.8.4")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "toolchains_llvm", version = "1.9.0")
 
+# Development-only compilation database generation for clangd.
+bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    remote = "https://github.com/helly25/bazel-compile-commands-extractor.git",
+    commit = "85d83bc1ee3ab8034d9c40f6900a0753688068b6",
+)
+
 # Download a pinned LLVM distribution for clang-format and clang-tidy. This
 # repository is intentionally not registered as the C/C++ compiler toolchain.
 llvm_tools = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
