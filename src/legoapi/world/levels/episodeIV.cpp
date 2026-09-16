@@ -2,9 +2,11 @@
 
 #include "decomp.h"
 #include "globals.h"
+#include "legoapi/items/objects/gameobjects.h"
 #include "legoapi/legoapi_types.h"
 #include "legoapi/world/levels/levels.h"
 #include "legoapi/world/level.h"
+#include "legoapi/characters/core/players.h"
 #include "legoapi/gizmo/base/GizBlowupObjectInterface.h"
 #include "legoapi/gizmo/base/GizObstacleObjectInterface.h"
 #include "legoapi/gizmo/base/gizmo.h"
@@ -43,7 +45,67 @@ void BlockadeRunnerC_Init(WORLDINFO_s *world) {
 void BlockadeRunnerB_Update(WORLDINFO_s *) {
 }
 
-void BlockadeRunnerD_Update(WORLDINFO_s *) {
+// hacks to get BlockadeRunnerD_Update to match
+// these should go away once BlockadeRunnerD_EjectCreature is implemented
+#if defined(__i386__)
+__attribute__((regparm(1)))
+#endif
+static __used__ __attribute__((noinline)) void BlockadeRunnerD_EjectCreature(int param) {
+#if defined(__i386__)
+    asm volatile("" : : "a"(param));
+#else
+    static_cast<void>(param);
+#endif
+}
+
+static __used__ void PartKill_EjectedCreature(PART_s *, i32) {
+}
+
+void BlockadeRunnerD_Update(WORLDINFO_s *world) {
+    if (netclient != 0)
+        return;
+
+    for (i32 i = 0; i < 8; i++) {
+        GameObject_s *game_object = LevGameObject[i];
+        if (game_object == nullptr)
+            continue;
+        PART_s *part = LevGamePart[i];
+        if (part == nullptr)
+            continue;
+
+        if (part->active & 1) {
+            game_object->field_0x1086 = 5;
+            game_object->saved_position = game_object->apiobj.position = part->position;
+            game_object->vehicle_orientation = part->transform;
+        }
+
+        if (part->active & 1 && part->field_1c0 == &PartKill_EjectedCreature) {
+            continue;
+        }
+
+        KillGameObject(game_object, 4, 0);
+        LevGameObject[i] = nullptr;
+    }
+
+    if (GizmoGetOutput(world->gizmo_sys, LevGizmo[0], 1, 1) != 0) {
+        if (LevFlag.obstacle15_active == 0) {
+            LevFlag.obstacle15_active = 1;
+            BlockadeRunnerD_EjectCreature(0);
+        }
+    } else {
+        LevFlag.obstacle15_active = 0;
+    }
+
+    if (GizmoGetOutput(world->gizmo_sys, LevGizmo[1], 1, 1) == 0) {
+        LevFlag.obstacle14_active = 0;
+        return;
+    }
+
+    if (LevFlag.obstacle14_active == 0) {
+        LevFlag.obstacle14_active = 1;
+        BlockadeRunnerD_EjectCreature(1);
+        return;
+    }
 }
 
 void BlockadeRunnerD_Reset(WORLDINFO_s *world) {

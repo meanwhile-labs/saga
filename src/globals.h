@@ -1068,7 +1068,7 @@ extern AIAREA_s *LevArea[4];
 extern i32 LevPathNodes[8];
 extern void *LevPathCnx[16];
 extern GameObject_s *LevGameObject[8];
-extern i32 LevGamePart[8];
+extern PART_s *LevGamePart[8];
 extern GIZAIMESSAGE_s *LevAIMessage[8];
 extern GIZBUILDIT_s *LevBuildIt[4];
 extern i32 LevelLocator;
