@@ -79,12 +79,10 @@ void BlockadeRunnerD_Update(WORLDINFO_s *world) {
             game_object->saved_position = game_object->apiobj.position = part->position;
         }
 
-        if (part->active & 1 && part->field_1c0 == &PartKill_EjectedCreature) {
-            continue;
+        if ((part->active & 1) == 0 || part->field_1c0 != &PartKill_EjectedCreature) {
+            KillGameObject(game_object, 4, 0);
+            LevGameObject[i] = nullptr;
         }
-
-        KillGameObject(game_object, 4, 0);
-        LevGameObject[i] = nullptr;
     }
 
     if (GizmoGetOutput(world->gizmo_sys, LevGizmo[0], 1, 1) != 0) {
@@ -96,15 +94,13 @@ void BlockadeRunnerD_Update(WORLDINFO_s *world) {
         LevFlag.obstacle15_active = 0;
     }
 
-    if (GizmoGetOutput(world->gizmo_sys, LevGizmo[1], 1, 1) == 0) {
+    if (GizmoGetOutput(world->gizmo_sys, LevGizmo[1], 1, 1) != 0) {
+        if (LevFlag.obstacle14_active == 0) {
+            LevFlag.obstacle14_active = 1;
+            BlockadeRunnerD_EjectCreature(1);
+        }
+    } else {
         LevFlag.obstacle14_active = 0;
-        return;
-    }
-
-    if (LevFlag.obstacle14_active == 0) {
-        LevFlag.obstacle14_active = 1;
-        BlockadeRunnerD_EjectCreature(1);
-        return;
     }
 }
 
