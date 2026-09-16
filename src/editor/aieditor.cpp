@@ -40,17 +40,17 @@ void antinodeEditor_Process(nupad_s *);
 void antinodeEditor_Render(i32, i32, f32, f32);
 
 extern "C" {
-i32 AIEDITOR_PATHS;
-i32 AIEDITOR_ROUTES = -1;
-i32 AIEDITOR_AREAS;
-i32 AIEDITOR_LOCATORS;
-i32 AIEDITOR_CREATURES;
-i32 AIEDITOR_ANTINODES;
+    i32 AIEDITOR_PATHS;
+    i32 AIEDITOR_ROUTES = -1;
+    i32 AIEDITOR_AREAS;
+    i32 AIEDITOR_LOCATORS;
+    i32 AIEDITOR_CREATURES;
+    i32 AIEDITOR_ANTINODES;
 }
 
 aieditor_settings_s aieditorsettings;
 extern "C" {
-extern void *ed_fnt;
+    extern void *ed_fnt;
 }
 struct EditorItemColours {
     u32 normal;

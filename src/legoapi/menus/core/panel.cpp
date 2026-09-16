@@ -224,4 +224,6 @@ void InitPanel(i32) {
 }
 
 // DrawPanel reads the private slide timer maintained by the panel lifecycle.
-f32 Panel_GetRedBrickSlideTime() { return redbrickslidetime; }
+f32 Panel_GetRedBrickSlideTime() {
+    return redbrickslidetime;
+}

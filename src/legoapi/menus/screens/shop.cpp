@@ -1533,7 +1533,6 @@ void DrawShop3D(WORLDINFO_s *world) {
     SetLevelLights(world->rtl_set, 1.0f);
 }
 
-
 void DrawCodeMenu() {
     if (cheattimer > 0.0f) {
         if (cheatname && cheattimer < 3.1499998569488525f && NuFmod(cheattimer, 0.35f) < 0.175f) {
@@ -1543,7 +1542,6 @@ void DrawCodeMenu() {
         cheattimer -= FRAMETIME;
     }
 }
-
 
 // The original shop inlines these NuMtx rotations (0x244679 onward).
 // Keep the arithmetic in sync with the canonical numtx.cpp implementations.
@@ -1603,7 +1601,6 @@ static inline void ShopRotateZ(NUMTX *m, NUANG a) {
 static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush, u16 xrot, u16 yrot,
                                u16 zrot);
 extern AREADATA *ANEWHOPE_ADATA;
-
 
 void DrawSubItems() {
     f32 alpha = 1.0f;
@@ -1823,7 +1820,6 @@ void DrawSubItems() {
     }
 }
 
-
 static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_value, f32 ypush, u16 xrot, u16 yrot,
                                u16 zrot) {
     if (!NuSpecialExistsFn(&iconback))
@@ -1865,7 +1861,6 @@ static void Shop_DrawCharacter(shopitem_s *item, NUVEC *position, f32 scale_valu
         }
     }
 }
-
 
 void DrawTopShelf(i32) {
     f32 alpha_scale = 1.0f;
@@ -1935,12 +1930,10 @@ void DrawTopShelf(i32) {
     }
 }
 
-
 void DrawShopPanel() {
     if (SHOPACTIVE && drawpanelptr)
         drawpanelptr();
 }
-
 
 void DrawCodeMenu3D() {
     i32 letters[6];

@@ -75,8 +75,8 @@ void BlockadeRunnerD_Update(WORLDINFO_s *world) {
 
         if (part->active & 1) {
             game_object->field_0x1086 = 5;
-            game_object->saved_position = game_object->apiobj.position = part->position;
             game_object->vehicle_orientation = part->transform;
+            game_object->saved_position = game_object->apiobj.position = part->position;
         }
 
         if (part->active & 1 && part->field_1c0 == &PartKill_EjectedCreature) {

@@ -46,7 +46,6 @@ void BezierLineLength(VuVec &, VuVec &, VuVec &, VuVec &) {
 void BezierLineLength(VuVec &, VuVec &, VuVec &, VuVec &, float) {
 }
 
-
 static void SplinePointAngles(NUGSPLINE *spline, i32 index, i32 looping, u16 *pitch, u16 *angle) {
     NUVEC *current = &spline->pts[index];
     i32 previous_index = index - 1;

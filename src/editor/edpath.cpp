@@ -63,7 +63,6 @@ struct EdUiNameInputItem : eduiitem_s {
 DECOMP_ASSERT(offsetof(EdUiNameInputItem, name) == 0x4c, "editor name input offset");
 DECOMP_ASSERT(offsetof(EdUiNameInputItem, max_name_length) == 0x15a, "editor name input limit offset");
 
-
 static __used__ void ParseAIPathCnxFlag(char *) {
 }
 
