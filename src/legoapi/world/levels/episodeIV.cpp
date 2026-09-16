@@ -73,7 +73,7 @@ void BlockadeRunnerD_Update(WORLDINFO_s *world) {
         if (part == nullptr)
             continue;
 
-        if (part->active & 1) {
+        if ((part->active & 1) == 1) {
             game_object->field_0x1086 = 5;
             game_object->vehicle_orientation = part->transform;
             game_object->saved_position = game_object->apiobj.position = part->position;
