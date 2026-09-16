@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "measures": {
-    "fuzzy_match_percent": 44.5299,
+    "fuzzy_match_percent": 44.57752,
     "total_code": "4722419",
     "matched_code": "385657",
     "matched_code_percent": 8.166513,
@@ -42223,14 +42223,6 @@
           "offset": 1186400,
           "size": 652,
           "match_percent": 3.043478
-        },
-        {
-          "name": "_ZL29BlockadeRunnerD_EjectCreaturei",
-          "demangled_name": "BlockadeRunnerD_EjectCreature(int)",
-          "address": 2173680,
-          "offset": 1283712,
-          "size": 1921,
-          "match_percent": 1.055409
         }
       ]
     },
@@ -79402,14 +79394,6 @@
           "match_percent": 100.0
         },
         {
-          "name": "_ZL24PartKill_EjectedCreatureP6PART_si",
-          "demangled_name": "PartKill_EjectedCreature(PART_s*, int)",
-          "address": 2171760,
-          "offset": 1281792,
-          "size": 648,
-          "match_percent": 3.111111
-        },
-        {
           "name": "_Z17Asteroid_PartKillP6PART_si",
           "demangled_name": "Asteroid_PartKill(PART_s*, int)",
           "address": 2196480,
@@ -84069,6 +84053,22 @@
           "match_percent": 3.181818
         },
         {
+          "name": "_ZL24PartKill_EjectedCreatureP6PART_si",
+          "demangled_name": "PartKill_EjectedCreature(PART_s*, int)",
+          "address": 2171760,
+          "offset": 1281792,
+          "size": 648,
+          "match_percent": 3.111111
+        },
+        {
+          "name": "_ZL29BlockadeRunnerD_EjectCreaturei",
+          "demangled_name": "BlockadeRunnerD_EjectCreature(int)",
+          "address": 2173680,
+          "offset": 1283712,
+          "size": 1921,
+          "match_percent": 0.897098
+        },
+        {
           "name": "_Z14TatooineA_InitP11WORLDINFO_s",
           "demangled_name": "TatooineA_Init(WORLDINFO_s*)",
           "address": 2175616,
@@ -84226,7 +84226,7 @@
           "address": 2184592,
           "offset": 1294624,
           "size": 2494,
-          "match_percent": 0.747331
+          "match_percent": 91.02491
         },
         {
           "name": "_Z21DeathStarRescueB_InitP11WORLDINFO_s",
